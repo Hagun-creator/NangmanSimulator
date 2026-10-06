@@ -1,38 +1,24 @@
-name: Deploy v3.21
+name: Deploy v3.22
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v321:
+  build-v322:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Fix current copy/guards and build v3.21
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p=Path('scripts/build_v321.py')
-          s=p.read_text(encoding='utf-8')
-          anchor="# Range UI: raw #600 through the first 6 ACTUAL normal raws after first pity.\n"
-          inject="text=re.sub(r'(<button id=\"daoExchangeWindowBtn\">).*?(</button>)',r'\\1 2. 원시 #600~천장 이후 6개 교체맥 보기\\2',text,count=1)\n"
-          if inject not in s:
-              if anchor not in s: raise SystemExit('range UI anchor missing')
-              s=s.replace(anchor,anchor+inject,1)
-          s=s.replace("'class=\"linkBtn dao-pull-v295\"','잡맥법 최소 세수단 경로','renderDaoSearchProgressV320',\n 'readCurrentPillBalanceV320','현재 검색 <b>#${info.searchNo.toLocaleString()}</b>'",
-                      "'class=\"linkBtn dao-pull-v295\"','잡맥법 최소 세수단 경로','daoCurrentPillsValue',\n '현재 검색 <b>#${directChecked}</b>','누적 잠금 검사'")
-          p.write_text(s,encoding='utf-8')
-          PY
-          python scripts/build_v321.py
-      - name: Commit v3.21
+      - name: Build and validate v3.22
+        run: python scripts/build_v322.py
+      - name: Commit v3.22
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_v321.py Nangman_Integrated_Simulator_v3_21.html latest.json README.md
-          git commit -m "Set raw 600 through six post-pity window in v3.21" || exit 0
+          git add Nangman_Integrated_Simulator_v3_22.html latest.json README.md
+          git commit -m "Restore daomai cache key helper in v3.22" || exit 0
           git pull --rebase origin main
           git push
