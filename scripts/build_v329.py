@@ -16,15 +16,14 @@ a=text.find('async function showDaoPullRouteV290(')
 b=text.find('\nasync function showDaoExchangeWindowV288(){',a)
 if a<0 or b<0: raise SystemExit('route boundary missing')
 route=text[a:b]
-start=route.find(' outer:{\n // v3.28 indexed daomai/kamek engine.')
-end=route.find('\n if(!best){',start)
+needle=route.find(' const targetSkip=Math.max(0,targetShift);')
+start=route.rfind(' outer:{',0,needle) if needle>=0 else -1
+end=route.find('\n if(!best){',needle)
 if start<0 or end<0: raise SystemExit('v3.28 engine block missing')
 
 new=r''' outer:{
  // v3.29 occurrence-tail daomai/kamek engine.
  // Core rule from the guide: choose WHICH occurrence of the same talent to lock.
- // If N later copies remain, that lock can consume roughly N raw talents; therefore do not
- // generate every page x mask x hold permutation.
  const targetSkip=Math.max(0,targetShift);
  const baselineCost=targetSkip>0?targetSkip*4:0;
  const occById=new Map();
@@ -39,7 +38,6 @@ new=r''' outer:{
  function holdToReach(pg,lockCount,targetRaw,expectedSkips){
    const free=Math.max(1,slots-lockCount);
    const gap=Math.max(1,+targetRaw-(+pg.__daoRawEnd));
-   // each wash accepts `free` new slots, while skipped duplicates also advance the raw cursor
    return Math.max(1,Math.ceil(Math.max(1,gap-Math.max(0,expectedSkips))/free));
  }
  function addPlan(out,seen,pg,dist,lockIds,hold,kind,want){
@@ -52,8 +50,6 @@ new=r''' outer:{
  }
  function occurrencePlans(want){
    const out=[],seen=new Set();
-   // One-lock plans: for each talent id, only inspect the LATEST starts that can still eat `want` copies.
-   // This is the minimum-hold side of the occurrence chain and is far smaller than scanning all pages.
    for(const [id,arr0] of occById.entries()){
      const arr=arr0.filter(n=>n<+d.firstPity.rawNo);
      if(want<=0||arr.length<=want)continue;
@@ -69,8 +65,6 @@ new=r''' outer:{
        for(const dh of [-1,0,1,2])addPlan(out,seen,pg,dist,[+id],baseHold+dh,'단일 반복맥',want);
      }
    }
-   // Two-lock plans are fallback only, and only on the compact set of pages already selected above.
-   // This covers the guide's "2개 잠금 -> 1회 -> 해제" style without reopening every page.
    const seedPages=[];const seenPg=new Set();
    for(const p of out){const k=+p.pg.__daoRawStart;if(!seenPg.has(k)){seenPg.add(k);seedPages.push(p.pg)}}
    for(const pg of seedPages){
@@ -80,7 +74,6 @@ new=r''' outer:{
        const aa=(occById.get(a)||[]).filter(n=>n>+pg.__daoRawEnd&&n<+d.firstPity.rawNo);
        const bb=(occById.get(b)||[]).filter(n=>n>+pg.__daoRawEnd&&n<+d.firstPity.rawNo);
        if(!aa.length&&!bb.length)continue;
-       // choose a small set of split targets kA+kB ~= want instead of all hold counts
        for(const kA of [0,Math.floor(want/2),Math.ceil(want/2),want]){
          const kB=want-kA;if(kA>aa.length||kB>bb.length)continue;
          const endA=kA?aa[kA-1]:+pg.__daoRawEnd;
@@ -98,13 +91,11 @@ new=r''' outer:{
      x.estCost-y.estCost || x.dist-y.dist || x.lockIds.length-y.lockIds.length);
    return out;
  }
-
  const skipTargets=targetSkip>0?[targetSkip,targetSkip-1,targetSkip+1,targetSkip-2,targetSkip+2]:[0];
  let testedPlans=0,totalGenerated=0;
  for(let ti=0;ti<skipTargets.length;ti++){
    const want=Math.max(0,skipTargets[ti]);
    const plans=occurrencePlans(want);totalGenerated+=plans.length;
-   // exact target first; nearby targets only if exact target produced no matching seed
    const cap=(ti===0?120:70);
    for(let pi=0;pi<plans.length&&pi<cap;pi++){
      const p=plans[pi];testedPlans++;
@@ -122,8 +113,6 @@ new=r''' outer:{
      best=cand;break outer;
    }
  }
-
- // Last-resort tiny fallback: only the top occurrence-derived candidates with no skip equality requirement.
  if(!best){
    const loose=[];
    for(const want of [Math.max(1,targetSkip-4),targetSkip+4])loose.push(...occurrencePlans(want).slice(0,24));
@@ -141,12 +130,10 @@ new=r''' outer:{
 route=route[:start]+new+route[end:]
 route=route.replace("`경로 검증: <b>${best.label||'비용우선 탐색'}</b>${best.baselineCost!=null?` · 위치/생략 기준비용 ${best.baselineCost}단`:''}${best.estimatedSkips!=null?` · 실제 추적 스킵 ${best.estimatedSkips}`:''}${best.indexFutureHits!=null?` · 잠금맥 재등장 ${best.indexFutureHits}개`:''}</div>`;",
                     "`경로 검증: <b>${best.label||'비용우선 탐색'}</b>${best.baselineCost!=null?` · 위치/생략 기준비용 ${best.baselineCost}단`:''}${best.estimatedSkips!=null?` · 실제 추적 스킵 ${best.estimatedSkips}`:''}${best.planKind?` · ${best.planKind}`:''}${best.generatedPlans!=null?` · 생성후보 ${best.generatedPlans}`:''}</div>`;",1)
-
 for x in ['function occurrencePlans(want)','const latestIdx=arr.length-want-1;','잡맥 출현열 탐색 중','단일 반복맥','2잠금 반복맥','잡맥 출현열 → Born seed 검증','const cap=(ti===0?120:70);']:
  if x not in route: raise SystemExit('v3.29 guard missing: '+x)
 if 'for(let x=100;x<=Math.min(200,dynamicMax);x++)' in route: raise SystemExit('old 100-200 priority loop remains')
 text=text[:a]+route+text[b:]
-
 DST.write_text(text,encoding='utf-8')
 Path('latest.json').write_text(json.dumps({'version':'v3.29','file':'Nangman_Integrated_Simulator_v3_29.html'},ensure_ascii=False,indent=2),encoding='utf-8')
 r=Path('README.md');s=r.read_text(encoding='utf-8');s=re.sub(r'현재 사이트 버전:\s*v?[0-9.]+','현재 사이트 버전: v3.29',s);r.write_text(s,encoding='utf-8')
