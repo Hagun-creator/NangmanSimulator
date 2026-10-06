@@ -1,24 +1,24 @@
-name: Deploy v3.31
+name: Deploy v3.32
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v331:
+  build-v332:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build and validate v3.31
-        run: python scripts/build_v331.py
-      - name: Commit v3.31
+      - name: Build and validate v3.32
+        run: python scripts/build_v332.py
+      - name: Commit v3.32
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_v331.py Nangman_Integrated_Simulator_v3_31.html latest.json README.md
-          git commit -m "Restore known-good save load outside daomai engine in v3.31" || exit 0
+          git add scripts/build_v332.py Nangman_Integrated_Simulator_v3_32.html latest.json README.md
+          git commit -m "Use exact wash state search for daomai routes in v3.32" || exit 0
           git pull --rebase origin main
           git push
