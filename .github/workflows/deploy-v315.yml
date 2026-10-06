@@ -1,24 +1,24 @@
-name: Deploy v3.16
+name: Deploy v3.17
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v316:
+  build-v317:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build and validate v3.16
-        run: python scripts/build_v316.py
-      - name: Commit v3.16
+      - name: Build and validate v3.17
+        run: python scripts/build_v317.py
+      - name: Commit v3.17
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Nangman_Integrated_Simulator_v3_16.html latest.json README.md
-          git commit -m "Speed up closest-seed daomai routing in v3.16" || exit 0
+          git add Nangman_Integrated_Simulator_v3_17.html latest.json README.md
+          git commit -m "Use cost-first progressive daomai routing in v3.17" || exit 0
           git pull --rebase origin main
           git push
