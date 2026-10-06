@@ -24,13 +24,15 @@ for bad in ['\\n \\n','\\n\\n','/n /n','/n/n']:
 outer=outer.replace('v2.84','v2.87').replace('v2_84','v2_87')
 outer=re.sub(r'(?<![0-9])2\.84(?![0-9])','2.87',outer)
 
-# Prevent stale root HTML from being reused after the browser has fetched this release once.
+# Replace embedded equipment first, using the original match offsets.
+enc=base64.b64encode(inner.encode('utf-8')).decode('ascii')
+outer=outer[:mo.start()]+f'const EQUIPMENT_HTML_B64="{enc}";'+outer[mo.end():]
+
+# Prevent stale root HTML from being reused after this release is fetched once.
 cache_meta='''<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">\n<meta http-equiv="Pragma" content="no-cache">\n<meta http-equiv="Expires" content="0">'''
 if 'http-equiv="Cache-Control"' not in outer:
     outer=outer.replace('<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">', '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n'+cache_meta,1)
 
-enc=base64.b64encode(inner.encode('utf-8')).decode('ascii')
-outer=outer[:mo.start()]+f'const EQUIPMENT_HTML_B64="{enc}";'+outer[mo.end():]
 DST.write_text(outer,encoding='utf-8')
 Path('index.html').write_text(outer,encoding='utf-8')
 
@@ -55,9 +57,9 @@ if "window.parent.scrollTo" not in inner or "q('#rresults')" not in inner:
 for bad in ['\\n \\n','\\n\\n','/n /n','/n/n']:
     if bad in inner: raise SystemExit('newline artifact remains '+repr(bad))
 
-if f'<title>낭만강호 통합 시뮬레이터 {VER}</title>' not in outer[:8000]: raise SystemExit('title mismatch')
+if f'<title>낭만강호 통합 시뮬레이터 {VER}</title>' not in outer[:9000]: raise SystemExit('title mismatch')
 if f'현재 사이트 버전: {VER}' not in s: raise SystemExit('README mismatch')
-if 'http-equiv="Cache-Control"' not in outer[:8000]: raise SystemExit('cache-control meta missing')
+if 'http-equiv="Cache-Control"' not in outer[:9000]: raise SystemExit('cache-control meta missing')
 
 # Syntax-check every executable script block.
 scripts=re.findall(r'<script\b[^>]*>(.*?)</script>',outer,re.I|re.S)
