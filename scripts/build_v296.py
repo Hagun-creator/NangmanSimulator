@@ -8,7 +8,7 @@ text=SRC.read_text(encoding='utf-8')
 
 # 1) First-pity raw table: visually group rows in sets of 3, matching the real 3-slot wash page.
 a=text.find('async function showDaoRawBeforeV288(){')
-b=text.find('\nasync function showDaoExchangeWindowV288(){',a)
+b=text.find('\nlet DAO_V290_ROUTE_ROWS=[];',a)
 if a<0 or b<0: raise SystemExit('showDaoRawBeforeV288 boundary missing')
 new_raw=r'''async function showDaoRawBeforeV288(){
  daoRawBeforeResult.innerHTML='<div class="warn">첫 천장 전 원시맥 계산 중...</div>';
