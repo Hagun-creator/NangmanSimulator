@@ -22,7 +22,6 @@ function daoDeleteCandidatesV290(d){
  for(const arr of by.values()){
    if(arr.length<2)continue;
    for(let j=1;j<arr.length;j++){
-     // Lock the nearest previous same trait; the later duplicate is swallowed when it collides on screen.
      const del=arr[j], prev=arr[j-1];
      const washes=Math.max(1,+del.wash-+prev.wash);
      out.push({id:del.id,name:del.name,lockRaw:prev.rawNo,lockWash:prev.wash,deleteRaw:del.rawNo,deleteWash:del.wash,washes,pills:washes*oneLockCost});
@@ -37,8 +36,6 @@ function showDaoPullRouteV290(targetName,sourceRaw,sourceName,sourceCol){
  const pre=d.rows.filter(x=>x.rawNo<d.firstPity.rawNo && x.weight<4);
  const currentPrev=pre.length?pre[pre.length-1]:null;
  if(!currentPrev){box.innerHTML='<div class="warn">현재 천장 직전 일반 자질을 찾지 못했습니다.</div>';return}
-
- // 잡맥법: deletion pulls later raw traits forward. Therefore only a later raw basis can replace current pity predecessor.
  const targets=DAO_V290_ROUTE_ROWS.filter(x=>x.firstDraw===targetName && x.rawNo>currentPrev.rawNo)
    .sort((a,b)=>(a.rawNo-currentPrev.rawNo)-(b.rawNo-currentPrev.rawNo));
  if(!targets.length){
@@ -52,7 +49,6 @@ function showDaoPullRouteV290(targetName,sourceRaw,sourceName,sourceCol){
    box.innerHTML=`<div class="warn"><b>${targetName}</b>을 천장으로 당기려면 원시 순서를 <b>${need}칸</b> 줄여야 합니다.<br>현재 천장 전 표에서 확인되는 생략 가능한 중복쌍은 ${cand.length}개라 자동 경로를 완성하지 못했습니다.</div>`;
    return;
  }
- // Greedy minimum-pill route; ties prefer deletions closest to pity.
  const chosen=cand.slice(0,need);
  const total=chosen.reduce((s,x)=>s+x.pills,0);
  let h=`<div class="good"><b>${targetName}</b>을 천장맥으로 당기는 최소 세수단 잡맥법</div>`;
@@ -112,11 +108,10 @@ inner=base64.b64decode(m.group(1)).decode('utf-8','replace').replace('v2.89','v2
 inner=re.sub(r'(?<![0-9])2\.89(?![0-9])','2.90',inner);enc=base64.b64encode(inner.encode()).decode();text=text[:m.start()]+f'const EQUIPMENT_HTML_B64="{enc}";'+text[m.end():]
 DST.write_text(text,encoding='utf-8');Path('index.html').write_text(text,encoding='utf-8')
 r=Path('README.md');s=r.read_text(encoding='utf-8');s=re.sub(r'현재 사이트 버전:\s*v?[0-9.]+','현재 사이트 버전: v2.90',s);r.write_text(s,encoding='utf-8')
-# guards
 for x in ["const sharedSaveInput = document.getElementById('sharedSaveFile')","sharedSaveInput?.addEventListener('change'","sharedSaveText = await file.text()","JSON.parse(sharedSaveText)"]:
     if x not in text: raise SystemExit('save loader regression: '+x)
 if 'daoRawBeforeBtn.onclick=showDaoRawBeforeV288' not in text: raise SystemExit('function1 changed')
-for x in ['showDaoPullRouteV290','daoDeleteCandidatesV290','최소 세수단 잡맥법','교체 15']:
+for x in ['showDaoPullRouteV290','daoDeleteCandidatesV290','최소 세수단 잡맥법','for(let i=1;i<=15;i++)']:
     if x not in text: raise SystemExit('v2.90 missing '+x)
 if 'http-equiv="Cache-Control"' not in text[:8000]: raise SystemExit('cache guard lost')
 for i,js in enumerate(re.findall(r'<script\b[^>]*>(.*?)</script>',text,re.I|re.S)):
