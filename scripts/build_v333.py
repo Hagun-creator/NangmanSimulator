@@ -51,7 +51,8 @@ start=route.rfind(' outer:{',0,anchor) if anchor>=0 else -1
 end=balanced_block_end(route,start) if start>=0 else -1
 if start<0 or end<0: raise SystemExit('v3.32 engine block missing')
 old=route[start:end]
-if 'v3.32 exact-state route search' not in old: raise SystemExit('unexpected v3.32 engine')
+if 'exact-state route search' not in old or 'function tryWash(' not in old or 'maxNodes' not in old:
+    raise SystemExit('unexpected v3.32 engine')
 
 new=r''' outer:{
  // v3.33 time-sliced exact-state route search.
@@ -103,8 +104,6 @@ new=r''' outer:{
    const sig=stateSig(cur.st),sv=seen.get(sig);
    if(sv&&(cur.cost>sv.cost||(cur.cost===sv.cost&&cur.startIndex<sv.startIndex)))continue;
 
-   // Probing every free intermediate state was the main v3.32 CPU spike. A route can only change Born flow after a lock action,
-   // so probe newly changed locked states; later lock actions will be probed in turn.
    if(cur.hasLock&&cur.action&&cur.action.kind!=='free'){
      const gp=goalProbe(cur.st);
      if(gp){
