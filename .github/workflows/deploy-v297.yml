@@ -1,0 +1,23 @@
+name: Deploy v2.97
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  build-v297:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build and validate v2.97
+        run: python scripts/build_v297.py
+      - name: Commit v2.97
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nangman_Integrated_Simulator_v2_97.html index.html latest.json README.md
+          git commit -m "Fill same-pity raw exchange tables in v2.97"
+          git push
