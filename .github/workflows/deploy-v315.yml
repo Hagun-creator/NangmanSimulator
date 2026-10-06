@@ -1,24 +1,24 @@
-name: Deploy v3.33
+name: Deploy v3.34
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v333:
+  build-v334:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build and validate v3.33
-        run: python scripts/build_v333.py
-      - name: Commit v3.33
+      - name: Build and validate v3.34
+        run: python scripts/build_v334.py
+      - name: Commit v3.34
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_v333.py Nangman_Integrated_Simulator_v3_33.html latest.json README.md
-          git commit -m "Time-slice exact daomai route search in v3.33" || exit 0
+          git add scripts/build_v334.py Nangman_Integrated_Simulator_v3_34.html latest.json README.md
+          git commit -m "Direct daomai search toward target Born seed in v3.34" || exit 0
           git pull --rebase origin main
           git push
