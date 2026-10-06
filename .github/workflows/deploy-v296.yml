@@ -1,29 +1,10 @@
-name: Deploy v2.96
+name: Deploy v2.96 (manual only)
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
-  build-v296:
-    if: github.actor != 'github-actions[bot]'
+  disabled-note:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Inspect v2.95 daomai structure
-        run: python scripts/diag_v295_structure.py
-      - name: Build and capture diagnostics
-        run: |
-          set +e
-          python scripts/build_v296.py > build_v296.log 2>&1
-          echo $? > build_v296.exit
-          cat build_v296.log
-      - name: Commit diagnostic or v2.96
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add diag_v295_structure.txt build_v296.log build_v296.exit Nangman_Integrated_Simulator_v2_96.html index.html latest.json README.md
-          git commit -m "Capture v2.95 structure and run v2.96 build" || exit 0
-          git push
+      - run: echo "v2.96 automatic deployment disabled after release."
