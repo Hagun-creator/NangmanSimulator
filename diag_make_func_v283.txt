@@ -1,0 +1,36 @@
+function rkMakePreviewNative233(req,n){
+ const cfg=EQUIP_DATA.equipment[String(req.equip_id)]||{},paper=EQUIP_DATA.papers[String(req.select_id)]||Object.values(EQUIP_DATA.papers||{}).find(p=>Number(p.dz_equip)===Number(req.equip_id)),npc=EQUIP_DATA.craftsman[String(req.npc_id)]||{};
+ if(!cfg||!paper||!npc)return{items:[],error:'제작 데이터 없음'};
+ const st=makeRndSnapshot||extractMakeRnd(window.__EQUIP_SAVE_ROOT__)||{},tier=String(Math.floor(Number(cfg.lv)/10));
+ const sharedRaw=st.Seeds?.[String(cfg.type)]?.[tier],sharedBucket=Number(sharedRaw);
+ let bucket=Number(cfg.lv)>=100?Number(st.IDSeeds?.[String(cfg.id)]??(sharedBucket+Number(cfg.id))):sharedBucket;
+ if(!Number.isFinite(bucket))return{items:[],error:'제작 RNG 없음'};
+ let luckyBucket=Number(cfg.lv)>=90?Number(st.LuckySeeds?.[String(cfg.id)]):Number(st.LuckySeeds?.[String(cfg.type)]?.[tier]);
+ let luckyKnown=Number.isFinite(luckyBucket),lucky=Number(st.MakeLucky?.[String(cfg.id)]?.count||0),out=[],pityOrder=0;
+ for(let i=0;i<n;i++){
+   const pity=lucky>=10;if(pity)pityOrder++;
+   /* Roboking: 90급 이상에서 LuckySeeds가 아직 없으면 첫 천장 순간 현재 일반 버킷으로 천장 전용 시드를 생성한다. */
+   if(pity&&!luckyKnown&&Number(cfg.lv)>=90){
+     const birthBucket=Number(cfg.lv)>=100?sharedBucket:bucket;
+     if(Number.isFinite(birthBucket)){luckyBucket=birthBucket+Number(cfg.id);luckyKnown=true}
+   }
+   const blind=pity&&!luckyKnown;
+   const baseBucket=pity?(luckyKnown?luckyBucket:0):bucket,seed=baseBucket+Number(paper.id);
+   const sd={MJSeed:Math.floor(seed/10)+Number(paper.id)*123,CZSeed:Math.floor(seed/10)+Number(paper.id)*321};
+   let z=seed;
+   // v2.64 Roboking parity: 천장도 품질 RNG 1회는 진행하지만, 범위는 max~max 한 칸만 사용한다.
+   const maxColor=Number(req.max_color??paper.max_color), normalMin=Number(req.min_color??paper.min_color);
+   const drawMin=pity?maxColor:normalMin;
+   const slice=(npc.shouyi||[]).slice(drawMin-1,maxColor);
+   const csel=rkWsel228(z,slice.reduce((a,b)=>a+Number(b||0),0)>0?slice:[0]);z=csel.seed;
+   let color=drawMin+csel.index;
+   Object.keys(cfg.base||{}).forEach(k=>{if(k!=='gq_base')z=rkWhale228(z,1).seed});
+   const ex=rkMakeExts233(z,cfg,color);z=ex.seed;
+   const regions=[];for(const k of ['tx','tx2']){const rr=rkRegionRoll228(z,npc[k],cfg.lv);z=rr.seed;if(rr.got)regions.push(rr.got)}
+   let special=[];if(req.special_id){const mat=EQUIP_DATA.special[String(req.special_id)];if(mat){try{const props=specialMaterialProperties(mat),pd=drawWeightedIndex(z,props.map(x=>x.weight),'재료옵션');z=pd.seed;const qd=drawWeightedIndex(z,[5000,500,50,5,1],'재료품질');z=qd.seed;const ranges=[[85,95],[95,105],[105,115],[115,125],[125,150]],rg=ranges[qd.index],fd=drawWhaleInt(z,rg[1]-rg[0]+1);z=fd.seed;const factor=rg[0]+fd.value-1,base=specialMaterialBaseValue(mat,cfg.lv,pd.index);special=[{prop:props[pd.index].prop,value:scaleSpecialMaterialValue(base,factor)}]}catch(_){}}}
+   out.push({index:i+1,equip_id:Number(cfg.id),name:ename(cfg),color,exts:ex.exts,region:regions,special,MJSeed:sd.MJSeed,CZSeed:sd.CZSeed,S:z,pity:!!pity,pity_order:pity?pityOrder:0,blind:!!blind,seed_kind:pity?'pity':'normal'});
+   if(pity){luckyBucket=rkWhale228(luckyKnown?luckyBucket:0,99999999).seed;lucky=0}
+   else{bucket=rkWhale228(bucket,99999999).seed;lucky=color>=Number(req.max_color??paper.max_color)?0:lucky+1}
+ }
+ return{items:out}
+}
