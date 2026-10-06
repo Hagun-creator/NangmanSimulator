@@ -1,24 +1,24 @@
-name: Deploy v3.37
+name: Deploy v3.38
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v337:
+  build-v338:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build and validate v3.37
-        run: python scripts/build_v337.py
-      - name: Commit v3.37
+      - name: Build and validate v3.38
+        run: python scripts/build_v338.py
+      - name: Commit v3.38
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_v337.py Nangman_Integrated_Simulator_v3_37.html latest.json README.md
-          git commit -m "Rename simulator and remove drop UI in v3.37" || exit 0
+          git add scripts/build_v338.py Nangman_Integrated_Simulator_v3_38.html latest.json README.md
+          git commit -m "Remove drop from top summary in v3.38" || exit 0
           git pull --rebase origin main
           git push
