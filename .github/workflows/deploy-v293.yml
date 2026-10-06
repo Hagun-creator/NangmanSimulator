@@ -1,7 +1,6 @@
-name: Deploy v2.93
+name: Deploy v2.93 (manual only)
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -19,5 +18,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Nangman_Integrated_Simulator_v2_93.html latest.json README.md
-          git commit -m "Fix daomai exchange-1 click and add result panel in v2.93"
+          git commit -m "Fix daomai exchange-1 click and add result panel in v2.93" || exit 0
           git push
