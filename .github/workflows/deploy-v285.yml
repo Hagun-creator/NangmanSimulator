@@ -12,69 +12,90 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build v2.85 and enforce guards
+      - name: Build v2.85
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re,base64,subprocess
+          import re,base64
 
           src=Path('Nangman_Integrated_Simulator_v2_84.html')
-          dst=Path('Nangman_Integrated_Simulator_v2_85.html')
           if not src.exists(): raise SystemExit('v2.84 source missing')
           text=src.read_text(encoding='utf-8')
           m=re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;',text)
-          if not m: raise SystemExit('embedded equipment payload missing')
+          if not m: raise SystemExit('equipment payload missing')
           inner=base64.b64decode(m.group(1)).decode('utf-8','replace')
 
-          # 1) Remove accidental visible newline literals from HTML text-node boundaries.
-          def clean_visible_tokens(s):
-              for bad in [r'\n \n',r'\n\n',r'/n /n',r'/n/n']:
-                  s=s.replace('>'+bad+'<','><')
-                  s=s.replace('> '+bad+' <','><')
-              # Known accidental standalone literals around injected style/script blocks.
-              s=re.sub(r'(?m)^\s*(?:\\n\s*){1,4}\s*$', '', s)
-              s=re.sub(r'(?m)^\s*(?:/n\s*){1,4}\s*$', '', s)
-              return s
-          inner=clean_visible_tokens(inner)
-          text=clean_visible_tokens(text)
+          # Remove standalone accidental newline literals from renderable HTML.
+          inner=re.sub(r'(?m)^\s*(?:\\n\s*){1,4}\s*$', '', inner)
+          inner=re.sub(r'(?m)^\s*(?:/n\s*){1,4}\s*$', '', inner)
+          inner=inner.replace('>\\n \\n<','><').replace('>\\n\\n<','><').replace('>/n /n<','><').replace('>/n/n<','><')
+          text=re.sub(r'(?m)^\s*(?:\\n\s*){1,4}\s*$', '', text)
+          text=re.sub(r'(?m)^\s*(?:/n\s*){1,4}\s*$', '', text)
 
-          # 2) Fix search-detail back navigation: scroll the OUTER page to the actual search-results block.
-          old="function showDetailTop233(obj,backView,initialTab){R.sel=obj;R.detailBack233=backView||R.view;R.detailTab=initialTab||'xl';const m=q('#rmain');m.innerHTML=`<button type=\"button\" class=\"back218\" id=\"dback233\">← 이전 목록</button><div id=\"dtop233\"></div>`;q('#dback233').onclick=()=>{const back=R.detailBack233||'find';open(back);if(back==='find')setTimeout(()=>{const rr=q('#rresults');if(rr&&R.results.length)rr.scrollIntoView({block:'start',behavior:'instant'})},0)};paintDetail(q('#dtop233'),obj);window.scrollTo({top:0,behavior:'instant'})}"
-          new="function showDetailTop233(obj,backView,initialTab){R.sel=obj;R.detailBack233=backView||R.view;R.detailTab=initialTab||'xl';const m=q('#rmain');m.innerHTML=`<button type=\"button\" class=\"back218\" id=\"dback233\">← 이전 목록</button><div id=\"dtop233\"></div>`;q('#dback233').onclick=()=>{const back=R.detailBack233||'find';open(back);if(back==='find'&&R.results.length){requestAnimationFrame(()=>requestAnimationFrame(()=>{const rr=q('#rresults');if(!rr)return;try{if(window.parent&&window.parent!==window&&window.frameElement){const fy=window.frameElement.getBoundingClientRect().top+window.parent.scrollY;const ry=rr.getBoundingClientRect().top+window.scrollY;window.parent.scrollTo({top:Math.max(0,fy+ry-12),behavior:'instant'})}else{window.scrollTo({top:Math.max(0,rr.getBoundingClientRect().top+window.scrollY-12),behavior:'instant'})}}catch(_){rr.scrollIntoView({block:'start',behavior:'instant'})}}))}};paintDetail(q('#dtop233'),obj);window.scrollTo({top:0,behavior:'instant'})}"
-          if inner.count(old)!=1: raise SystemExit(f'showDetailTop233 v2.84 match count={inner.count(old)}')
-          inner=inner.replace(old,new,1)
+          # Replace detail-back handler with parent-page coordinate scrolling.
+          start=inner.find('function showDetailTop233(')
+          if start<0: raise SystemExit('showDetailTop233 missing')
+          end=inner.find('\nfunction paintDetail(',start)
+          if end<0: raise SystemExit('showDetailTop233 end missing')
+          new_fn="""function showDetailTop233(obj,backView,initialTab){R.sel=obj;R.detailBack233=backView||R.view;R.detailTab=initialTab||'xl';const m=q('#rmain');m.innerHTML=`<button type=\"button\" class=\"back218\" id=\"dback233\">← 이전 목록</button><div id=\"dtop233\"></div>`;q('#dback233').onclick=()=>{const back=R.detailBack233||'find';open(back);if(back==='find'&&R.results.length){requestAnimationFrame(()=>requestAnimationFrame(()=>{const rr=q('#rresults');if(!rr)return;try{const localY=rr.getBoundingClientRect().top+window.scrollY;if(window.parent&&window.parent!==window&&window.frameElement){const frameY=window.frameElement.getBoundingClientRect().top+window.parent.scrollY;window.parent.scrollTo(0,Math.max(0,frameY+localY-12))}else window.scrollTo(0,Math.max(0,localY-12))}catch(_){rr.scrollIntoView({block:'start'})}}))}};paintDetail(q('#dtop233'),obj);window.scrollTo(0,0)}"""
+          inner=inner[:start]+new_fn+inner[end:]
 
-          # 3) Advance all known version forms, including visible forms without the leading v.
-          text=text.replace('v2.84','v2.85').replace('v2_84','v2_85')
+          # Version bump, including visible no-v form.
           inner=inner.replace('v2.84','v2.85').replace('v2_84','v2_85')
-          # visible labels that may omit the v prefix
           inner=re.sub(r'(?<![0-9])2\.84(?![0-9])','2.85',inner)
+          text=text.replace('v2.84','v2.85').replace('v2_84','v2_85')
           text=re.sub(r'(?<![0-9])2\.84(?![0-9])','2.85',text)
           text=text.replace('id="v284-mobile-integrated"','id="v285-mobile-integrated"')
           inner=inner.replace('id="v284-mobile-equipment"','id="v285-mobile-equipment"')
 
-          enc=base64.b64encode(inner.encode('utf-8')).decode('ascii')
+          enc=base64.b64encode(inner.encode()).decode()
           text=text[:m.start()]+f'const EQUIPMENT_HTML_B64="{enc}";'+text[m.end():]
-          dst.write_text(text,encoding='utf-8')
+          Path('Nangman_Integrated_Simulator_v2_85.html').write_text(text,encoding='utf-8')
           Path('index.html').write_text(text,encoding='utf-8')
 
           readme=Path('README.md')
           s=readme.read_text(encoding='utf-8') if readme.exists() else '# NangmanSimulator\n'
           s=re.sub(r'현재 사이트 버전:\s*v?[0-9.]+','현재 사이트 버전: v2.85',s)
-          if '현재 사이트 버전:' not in s: s+='\n현재 사이트 버전: v2.85\n'
+          if '현재 사이트 버전:' not in s:s+='\n현재 사이트 버전: v2.85\n'
           readme.write_text(s,encoding='utf-8')
 
-          # Permanent validator used by EVERY future release.
-          guard=Path('scripts/validate_release.py')
-          guard.parent.mkdir(parents=True,exist_ok=True)
-          guard.write_text('''from pathlib import Path\nimport re,sys,base64\nver=sys.argv[1] if len(sys.argv)>1 else None\nif not ver: raise SystemExit("usage: validate_release.py vX.YY")\nnum=ver[1:] if ver.startswith("v") else ver\nfn="Nangman_Integrated_Simulator_"+ver.replace(".","_")+".html"\n\ndef visible_text_nodes(html):\n    scrub=re.sub(r"<script\\b[^>]*>.*?</script>","",html,flags=re.I|re.S)\n    scrub=re.sub(r"<style\\b[^>]*>.*?</style>","",scrub,flags=re.I|re.S)\n    return [re.sub(r"<[^>]+>","",x).strip() for x in re.findall(r">([^<]+)<",scrub,re.S) if x.strip()]\n\ndef check_html(p):\n    if not p.exists(): raise SystemExit(f"missing {p}")\n    t=p.read_text(encoding="utf-8")\n    if f"<title>낭만강호 통합 시뮬레이터 {ver}</title>" not in t[:7000]: raise SystemExit(f"title mismatch: {p}")\n    nodes=visible_text_nodes(t)\n    for x in nodes:\n        if "\\\\n" in x or "/n/n" in x or "/n /n" in x: raise SystemExit(f"visible newline literal in {p}: {x[:80]!r}")\n    m=re.search(r"const\\s+EQUIPMENT_HTML_B64\\s*=\\s*\\\"([A-Za-z0-9+/=]+)\\\"\\s*;",t)\n    if m:\n        inner=base64.b64decode(m.group(1)).decode("utf-8","replace")\n        for x in visible_text_nodes(inner):\n            if "\\\\n" in x or "/n/n" in x or "/n /n" in x: raise SystemExit(f"visible newline literal in embedded equipment: {x[:80]!r}")\n        old_versions=[x for x in re.findall(r"(?<![0-9])v?2\\.\\d{2}(?![0-9])",inner) if x not in {ver,num}]\n        # Old versions are allowed only inside historical comments/ids, not visible text nodes.\n        for x in visible_text_nodes(inner):\n            if re.search(r"(?<![0-9])v?2\\.\\d{2}(?![0-9])",x) and ver not in x and num not in x:\n                raise SystemExit(f"stale visible version in embedded equipment: {x[:100]!r}")\n\nfor p in [Path(fn),Path("index.html")]: check_html(p)\nr=Path("README.md").read_text(encoding="utf-8")\nif f"현재 사이트 버전: {ver}" not in r: raise SystemExit("README version mismatch")\nprint("release validation OK",ver)\n''',encoding='utf-8')
+          # Permanent validator for all future releases.
+          Path('scripts').mkdir(exist_ok=True)
+          Path('scripts/validate_release.py').write_text(r'''from pathlib import Path
+import re,sys,base64
+ver=sys.argv[1]
+fn='Nangman_Integrated_Simulator_'+ver.replace('.','_')+'.html'
 
+def text_nodes(s):
+    s=re.sub(r'<script\b[^>]*>.*?</script>','',s,flags=re.I|re.S)
+    s=re.sub(r'<style\b[^>]*>.*?</style>','',s,flags=re.I|re.S)
+    return [x.strip() for x in re.findall(r'>([^<]+)<',s,re.S) if x.strip()]
+
+def check(p):
+    t=Path(p).read_text(encoding='utf-8')
+    if f'<title>낭만강호 통합 시뮬레이터 {ver}</title>' not in t[:7000]:raise SystemExit('title mismatch '+p)
+    for x in text_nodes(t):
+        if '\\n' in x or '/n/n' in x or '/n /n' in x:raise SystemExit('visible newline token '+p+': '+repr(x[:80]))
+    m=re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;',t)
+    if m:
+        inn=base64.b64decode(m.group(1)).decode('utf-8','replace')
+        for x in text_nodes(inn):
+            if '\\n' in x or '/n/n' in x or '/n /n' in x:raise SystemExit('visible embedded newline token: '+repr(x[:80]))
+        if "window.parent.scrollTo" not in inn or "q('#rresults')" not in inn:raise SystemExit('search-return scroll guard missing')
+check(fn);check('index.html')
+r=Path('README.md').read_text(encoding='utf-8')
+if f'현재 사이트 버전: {ver}' not in r:raise SystemExit('README mismatch')
+print('OK',ver)
+''',encoding='utf-8')
+
+          # Execute permanent guard now.
+          import subprocess
           subprocess.check_call(['python','scripts/validate_release.py','v2.85'])
           PY
-      - name: Commit v2.85 and permanent validator
+      - name: Commit v2.85
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Nangman_Integrated_Simulator_v2_85.html index.html README.md scripts/validate_release.py
-          git commit -m "Deploy v2.85 with fixed search return and permanent guards"
+          git commit -m "Deploy v2.85 with stable version and search-result return"
           git push
