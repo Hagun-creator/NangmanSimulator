@@ -1,0 +1,68 @@
+name: Deploy v2.78 mobile UI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-v278:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build v2.78 from v2.77
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64, re
+
+          src = Path("Nangman_Integrated_Simulator_v2_77.html")
+          dst = Path("Nangman_Integrated_Simulator_v2_78.html")
+          if not src.exists():
+              raise SystemExit("v2.77 source not found")
+
+          outer_css = '\\n<style id="v278-mobile-integrated">\\n/* v2.78 mobile shell. No desktop layout changes. */\\n@media (max-width: 760px){\\n  html,body{width:100%;max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%}\\n  main{width:100%!important;max-width:100%!important;box-sizing:border-box!important;padding:8px!important;margin:0!important}\\n  h1{font-size:20px!important;line-height:1.25!important;margin-bottom:3px!important}\\n  h2{font-size:16px!important}\\n  .integrated-subtitle{font-size:11px!important;line-height:1.4!important}\\n  .card{max-width:100%!important;min-width:0!important;box-sizing:border-box!important;padding:10px!important;margin:8px 0!important;border-radius:9px!important}\\n  .module-switch{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:4px!important;margin:8px 0!important}\\n  .module-switch button{min-width:0!important;min-height:44px!important;padding:7px 4px!important;font-size:12px!important;line-height:1.25!important;white-space:normal!important;touch-action:manipulation}\\n  .shared-save-bar{display:grid!important;grid-template-columns:1fr!important;gap:6px!important;padding:7px!important}\\n  .shared-save-btn{width:100%!important;min-height:42px!important;box-sizing:border-box!important;text-align:center!important}\\n  .row{max-width:100%!important;min-width:0!important;gap:6px!important;flex-wrap:wrap!important}\\n  .row>*,label,select,input,button{max-width:100%!important;box-sizing:border-box!important}\\n  select,input,textarea{font-size:16px!important}\\n  button{min-height:40px;touch-action:manipulation}\\n  #washModule>.card>.tabs,.tabs,.n-subtabs{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;gap:4px!important;padding-bottom:3px!important;-webkit-overflow-scrolling:touch!important;scrollbar-width:none!important}\\n  #washModule>.card>.tabs::-webkit-scrollbar,.tabs::-webkit-scrollbar,.n-subtabs::-webkit-scrollbar{display:none}\\n  .tabs button,.n-subtabs button{flex:0 0 auto!important;min-height:40px!important;white-space:nowrap!important;padding:7px 10px!important}\\n  .scroll,.character-table-wrap{max-width:100%!important;width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}\\n  #simPane.active{height:auto!important;overflow:visible!important}\\n  .sim-workspace{grid-template-columns:1fr!important;height:auto!important;gap:7px!important}\\n  .sim-left,.sim-right{overflow:visible!important;min-width:0!important;padding:7px!important}\\n  #characterModule .rk-character-page,#characterModule .character-overview,#characterModule .character-sections{width:100%!important;max-width:100%!important;min-width:0!important}\\n  #equipmentModule{width:100%!important;max-width:100%!important;margin-top:4px!important;overflow:hidden!important}\\n  #equipmentFrame{display:block!important;width:100%!important;max-width:100%!important;min-width:0!important;min-height:620px!important;border:0!important}\\n}\\n@media (max-width: 430px){\\n  main{padding:6px!important}\\n  h1{font-size:18px!important}\\n  .module-switch button{font-size:11.5px!important;padding:6px 3px!important}\\n  .card{padding:8px!important}\\n}\\n</style>\\n'
+          inner_css = '\\n<style id="v278-mobile-equipment">\\n/* v2.78 mobile: equipment UI only. Desktop layout stays unchanged. */\\n@media (max-width: 760px){\\n  html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important;-webkit-text-size-adjust:100%}\\n  body{font-size:14px!important}\\n  .app-container,.app-container.equip-app,.equip-app{width:100%!important;max-width:100%!important;box-sizing:border-box!important;padding:4px 6px 18px!important;margin:0!important}\\n  .rb-equip-nav{margin:0 -2px 4px!important;padding:5px 2px 7px!important;gap:3px!important;overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:none!important;-webkit-overflow-scrolling:touch!important}\\n  .rb-equip-nav::-webkit-scrollbar{display:none}\\n  .rb-equip-nav button{min-height:42px!important;padding:8px 11px!important;font-size:12.5px!important;white-space:nowrap!important;touch-action:manipulation}\\n  .rb-equip-caption{padding:4px 3px 7px!important;font-size:10.5px!important;line-height:1.4!important}\\n  .jh-shell,#jhEquipmentShell{width:100%!important;max-width:100%!important;min-width:0!important}\\n  .jh-home-grid{grid-template-columns:1fr!important;gap:6px!important}\\n  .jh-home-btn{min-height:58px!important;padding:10px 11px!important}\\n  .config-panel,.action-panel,.history-panel,.manual-panel,.preview-panel,.panel,.card{max-width:100%!important;min-width:0!important;box-sizing:border-box!important;padding:9px!important;margin:6px 0!important}\\n  .panel-header{align-items:flex-start!important;flex-wrap:wrap!important}\\n  .config-row,.enhance-grid,.enhance-equip-summary,.auto-wash-role-grid,.ai-settings-grid{grid-template-columns:1fr!important;display:grid!important;gap:7px!important}\\n  .config-group{min-width:0!important;width:100%!important}\\n  input,select,textarea,button,.btn{max-width:100%!important;box-sizing:border-box!important}\\n  input,select,textarea{font-size:16px!important}\\n  button,.btn{min-height:40px;touch-action:manipulation}\\n  .action-buttons{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px!important}\\n  .tab-bar,.tab-buttons,.tab-nav,.tabs,.jh-subtabs{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;gap:4px!important;-webkit-overflow-scrolling:touch!important;scrollbar-width:none!important}\\n  .tab-bar::-webkit-scrollbar,.tab-buttons::-webkit-scrollbar,.tab-nav::-webkit-scrollbar,.tabs::-webkit-scrollbar,.jh-subtabs::-webkit-scrollbar{display:none}\\n  .tab-btn,.tab-buttons button,.tab-nav button,.tabs button,.jh-subtabs button{flex:0 0 auto!important;min-height:40px!important;white-space:nowrap!important}\\n  .archive-summary-info{grid-template-columns:1fr 1fr!important;gap:6px!important}\\n  .archive-summary-actions{grid-template-columns:1fr 1fr!important}\\n  #rk218{width:100%!important;max-width:100%!important;min-width:0!important;padding:4px!important;box-sizing:border-box!important}\\n  #rk218 .rk218-top{position:static!important}\\n  #rk218 .rk218-nav,#rk218 .tabs218,#rk218 .chips,#rk218 .route{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;max-width:100%!important;-webkit-overflow-scrolling:touch!important;scrollbar-width:none!important}\\n  #rk218 .rk218-nav::-webkit-scrollbar,#rk218 .tabs218::-webkit-scrollbar,#rk218 .chips::-webkit-scrollbar,#rk218 .route::-webkit-scrollbar{display:none}\\n  #rk218 .rk218-nav button,#rk218 .tabs218 button,#rk218 .chip,#rk218 .tag{flex:0 0 auto!important;white-space:nowrap!important}\\n  #rk218 .tabs218 button,#rk218 .chip,#rk218 .rbtn{min-height:40px!important;padding:8px 10px!important}\\n  #rk218 .recipe-card,#rk218 .identity,#rk218 .budget,#rk218 .grid218,#rk218 .region-grid223,#rk218 .unique-grid223,#rk218 .jw-target223{grid-template-columns:1fr!important;max-width:100%!important;min-width:0!important}\\n  #rk218 .recipe-card>* ,#rk218 .identity>* ,#rk218 .budget>* ,#rk218 .grid218>*{min-width:0!important;max-width:100%!important}\\n  #rk218 .grp218{min-width:0!important;max-width:100%!important}\\n  #rk218 .sentence,#rk218 .meta,#rk218 .note218,#rk218 .mini,#rk218 .rb-detail233{overflow-wrap:anywhere!important;word-break:keep-all!important}\\n  #rk218 .scroll218{width:100%!important;max-width:100%!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;border-radius:7px!important}\\n  #rk218 .scroll218 .tbl218{width:max-content!important;min-width:620px!important;table-layout:auto!important}\\n  #rk218 .tbl218 th,#rk218 .tbl218 td{white-space:nowrap!important;overflow-wrap:normal!important;word-break:normal!important;padding:6px 7px!important;font-size:11.5px!important}\\n  #rk218 .rb-detail233{padding:8px!important;max-width:100%!important;box-sizing:border-box!important}\\n  #rk218 .detail-region277{margin:0 0 7px!important;padding:7px 9px!important;max-width:100%!important;box-sizing:border-box!important}\\n  #rk218 .search-progress264 .counts{display:grid!important;grid-template-columns:1fr 1fr!important;gap:4px!important}\\n}\\n@media (max-width: 420px){\\n  .rb-equip-nav button{padding:8px 9px!important;font-size:12px!important}\\n  .action-buttons{grid-template-columns:1fr 1fr!important}\\n  #rk218 .scroll218 .tbl218{min-width:560px!important}\\n  #rk218 .tbl218 th,#rk218 .tbl218 td{font-size:11px!important;padding:5px 6px!important}\\n}\\n</style>\\n'
+
+          text = src.read_text(encoding="utf-8")
+          text = text.replace("낭만강호 통합 시뮬레이터 v2.77", "낭만강호 통합 시뮬레이터 v2.78")
+          if 'id="v278-mobile-integrated"' not in text:
+              text = text.replace("</head>", outer_css + "</head>", 1)
+
+          m = re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;', text)
+          if not m:
+              raise SystemExit("embedded equipment payload not found")
+          inner = base64.b64decode(m.group(1)).decode("utf-8")
+          if 'id="v278-mobile-equipment"' not in inner:
+              inner = inner.replace("</head>", inner_css + "</head>", 1)
+          enc = base64.b64encode(inner.encode("utf-8")).decode("ascii")
+          text = text[:m.start()] + f'const EQUIPMENT_HTML_B64="{enc}";' + text[m.end():]
+          dst.write_text(text, encoding="utf-8")
+
+          idx = Path("index.html")
+          if idx.exists():
+              s = idx.read_text(encoding="utf-8")
+              s = s.replace("v2.77", "v2.78").replace("v2_77", "v2_78")
+              idx.write_text(s, encoding="utf-8")
+
+          readme = Path("README.md")
+          if readme.exists():
+              s = readme.read_text(encoding="utf-8").replace("v2.77", "v2.78")
+              readme.write_text(s, encoding="utf-8")
+          PY
+      - name: Commit generated v2.78
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nangman_Integrated_Simulator_v2_78.html index.html README.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Deploy v2.78 mobile UI"
+          git push
