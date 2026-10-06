@@ -1,0 +1,198 @@
+FILE Nangman_Integrated_Simulator_v2_84.html
+SCRIPTS 3
+[0] len=93407 sha=756532adb8f8f5ce
+  SAVE_RELATED
+  141:  document.querySelectorAll(".specialChk").forEach(el=>el.onchange=()=>{
+  155:  gold_count:0,pity_count:0,quality_counts:{"1":0,"2":0,"3":0,"4":0},last_purple_total_pills:null,exchange_count:0,
+  206:        earlier_conflict_gap:earlier?bar-earlier[0]:null,earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+  250:          earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+  266:      x.can_exchange=!x.was_pity && (firstPityIdx<0 || out.indexOf(x)<firstPityIdx);
+  273:      x.can_exchange=false;
+  284:      x.can_exchange=false;
+  288:      x.can_exchange=false;
+  296: function findExchangeCandidates(base,ps=null){
+  304:    const avail=!!(r.can_exchange&&conflictName)&&!r.was_pity&&!r.hasPriorPity;
+  310: function exchangeSequence(luckSeed,state,count=15){
+  315: function exchangeNRows(base,c,maxN=30,count=15){
+  323:    return [{n:0,pills:0,luck:+s.luck_seed,draws:exchangeSequence(+s.luck_seed,s,count)}];
+  395:      draws:exchangeSequence(luck,branch,count),
+  447: function exchangeConflictsExact(st){
+  458:      out[i]={index:i,earlier_index:j,can_exchange:possible};break;
+  463: function exchangeOnceExact(before,index){
+  464:  const st=dc(before),conf=exchangeConflictsExact(st),match=index>=0&&index<st.talents.length&&conf[index];
+  465:  if(!match||!match.can_exchange)throw Error("충돌교체 조건 불충족");
+  476:  st.talents=remaining;st.luck_seed=luck;st.luck_seed_inited=true;st.tal_lucky=0;st.exchange_count=+(st.exchange_count||0)+1;
+  501: function firstExchangeBranch(base,c,n){
+  509:  const ex=exchangeOnceExact(st,idx);
+  514:    st.talents.map(x=>+x.id).join(","),st.exchange_count||0].join("|");
+  864:  const conf=exchangeConflictsExact(SIM),out=[];
+  867:    if(!r?.can_exchange)continue;
+  905:  sel.onchange=()=>{SIM_FIND_STATE={key:"",rank:0,hit:null};};
+  1008: function simPrelockFirstExchangeAnchor(){
+  1015:  let seq=[];try{seq=exchangeSequence(+SIM.seed,SIM,1)}catch(e){}
+  1029: function simUpdateExchangePreview(){
+  1030:  if(!SIM){simExchangePreview.innerHTML="";return}
+  1033:    const seq=exchangeSequence(seed,SIM,15);
+  1034:    simExchangePreview.innerHTML=`<b>${SIM.luck_seed_inited?"현재 고정 치환열 · 다음 치환맥부터":"현재 최초치환 기준 예상열"}</b> · seed ${seed}<br>${seq.map((x,i)=>`${i+1}. ${x.name}`).join(" → ")}`;
+  1035:  }catch(e){simExchangePreview.innerHTML=`<span class="bad">${e.message}</span>`}
+  1097:    h+=`<tr${rowStyle}><td>${state}</td><td class="num">${x.wash_no}</td><td class="num">${need}</td><td class="num">${total}</td><td class="q4">${x.talent_name}</td><td>${x.was_pity?"★":"-"}</td><td>${conf}${x.earlier_conflict_wash_no!=null?` <span class="small">#${x.earlier_conflict_wash_no}</span>`:""}</td><td>${x.can_exchange&&!x.was_pity&&!x.hasPriorPity?"가능":"불가"}</td></tr>`;
+  1105:    simExchangeSel.innerHTML="";
+  1107:    simExchangePreview.innerHTML="";
+  1119:  const slotConflictRows=exchangeConflictsExact(SIM);
+  1140:    const canExchange=!!(slotConflictRows[i]?.can_exchange && +t?.weight===4);
+  1141:    const exchangeIcon=canExchange?`<span class="sim-exchange-icon" title="충돌교체 가능" aria-label="충돌교체 가능"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10l-2.6-2.6M17 17H7l2.6 2.6M18.5 7.5A7 7 0 0 1 19 10M5 14a7 7 0 0 1 .5-2.5"/></svg></span>`:"";
+  1143:      <div style="display:flex;align-items:center;gap:2px"><b>슬롯 ${i+1}</b> · <span class="q${Math.max(1,Math.min(4,+t?.weight||1))}">${nm(sl.id)}</span>${exchangeIcon}</div>
+  1162:        const canImmediate=exchangeConflictsExact(test).some(r=>r?.can_exchange);
+  1181:  simExchangeSel.innerHTML=rows.length
+  1187:  simUpdateExchangePreview();
+  1396:  let changed=0;
+  1398:    if(t.locked){t.locked=false;changed++}
+  1400:  simLog("전체 잠금 해제",`${changed}개 잠금 해제`);
+  1414: function simExchange(){
+  1416:  const idx=Number(simExchangeSel.value);
+  1421:    const ex=exchangeOnceExact(SIM,idx);
+  1429: function simPreparedExchangeTarget(st){
+  1433:  try{seq=exchangeSequence(+st.luck_seed,st,Math.max(8,slots+4))}catch(e){}
+  1478:  const exTarget=simPreparedExchangeTarget(start);
+  1579: async function simWashToNextExchangeAnchor(){
+  1596:  try{seq=exchangeSequence(+SIM.luck_seed,SIM,Math.max(8,slots+4))}catch(e){}
+  1699: function simPreviewExchange(){
+  1701:  simUpdateExchangePreview();
+  1743:    CANDS=findExchangeCandidates(st,RAW); // 재스캔 금지
+  1762:    <td>${x.can_exchange&&!x.was_pity&&!x.hasPriorPity?"가능":"불가"}${x.block_reason?`<br><span class="small">${x.block_reason}</span>`:""}</td></tr>`;
+  1810:    const st=stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi()),rows=exchangeNRows(st,c,+nMax.value,15);
+  1831:  const f=saveFile.files&&saveFile.files[0];
+  1842:    const parsed=JSON.parse(txt);
+  1892: saveFile.onchange=()=>{
+  1893:  const f=saveFile.files&&saveFile.files[0];
+  1897: roleSel.onchange=()=>{
+  1903: vipSel.onchange=()=>{
+  1907: rawCount.onchange=()=>{};
+  1908: rawSlots.onchange=()=>{
+  1940: simWashNextExchangeAnchor.onclick=simWashToNextExchangeAnchor;
+  1944: simExchangeBtn.onclick=simExchange;
+  1945: simPreviewExchangeBtn.onclick=simPreviewExchange;
+[1] len=292182 sha=3d1f07d2a95a8db2
+[2] len=1045997 sha=ac4fc1fed173816c
+  SAVE_RELATED
+  18:         if (sharedSaveText) {
+  20:             const parsed = JSON.parse(sharedSaveText);
+  23:             else if (typeof w.loadSaveData === 'function') w.loadSaveData(parsed);
+  47:   const sharedSaveInput = document.getElementById('sharedSaveFile');
+  48:   const sharedSaveName = document.getElementById('sharedSaveName');
+  49:   const sharedSaveStatus = document.getElementById('sharedSaveStatus');
+  50:   let sharedSaveText = null;
+  51:   let sharedSaveFileName = null;
+  55:       const target = document.getElementById('saveFile');
+  81:     if (!sharedSaveText) return false;
+  86:       const parsed = JSON.parse(sharedSaveText);
+  89:       } else if (typeof w.loadSaveData === 'function') {
+  90:         w.loadSaveData(parsed);
+  95:         w.appendLog(`[save.json] ${sharedSaveFileName || '공통 세이브'} 불러오기 완료`);
+  104:   sharedSaveInput?.addEventListener('change', async () => {
+  105:     const file = sharedSaveInput.files?.[0];
+  107:     sharedSaveStatus.textContent = `${file.name} 불러오는 중...`;
+  109:       sharedSaveText = await file.text();
+  110:       JSON.parse(sharedSaveText);
+  111:       sharedSaveFileName = file.name;
+  112:       sharedSaveName.textContent = file.name;
+  121:       document.getElementById('sharedSaveBar')?.classList.add('loaded');
+  126:       sharedSaveStatus.innerHTML = `<span class="bad">세이브 불러오기 실패: ${e.message || e}</span>`;
+
+FILE Nangman_Integrated_Simulator_v2_85.html
+SCRIPTS 3
+[0] len=93407 sha=756532adb8f8f5ce
+  SAVE_RELATED
+  141:  document.querySelectorAll(".specialChk").forEach(el=>el.onchange=()=>{
+  155:  gold_count:0,pity_count:0,quality_counts:{"1":0,"2":0,"3":0,"4":0},last_purple_total_pills:null,exchange_count:0,
+  206:        earlier_conflict_gap:earlier?bar-earlier[0]:null,earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+  250:          earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+  266:      x.can_exchange=!x.was_pity && (firstPityIdx<0 || out.indexOf(x)<firstPityIdx);
+  273:      x.can_exchange=false;
+  284:      x.can_exchange=false;
+  288:      x.can_exchange=false;
+  296: function findExchangeCandidates(base,ps=null){
+  304:    const avail=!!(r.can_exchange&&conflictName)&&!r.was_pity&&!r.hasPriorPity;
+  310: function exchangeSequence(luckSeed,state,count=15){
+  315: function exchangeNRows(base,c,maxN=30,count=15){
+  323:    return [{n:0,pills:0,luck:+s.luck_seed,draws:exchangeSequence(+s.luck_seed,s,count)}];
+  395:      draws:exchangeSequence(luck,branch,count),
+  447: function exchangeConflictsExact(st){
+  458:      out[i]={index:i,earlier_index:j,can_exchange:possible};break;
+  463: function exchangeOnceExact(before,index){
+  464:  const st=dc(before),conf=exchangeConflictsExact(st),match=index>=0&&index<st.talents.length&&conf[index];
+  465:  if(!match||!match.can_exchange)throw Error("충돌교체 조건 불충족");
+  476:  st.talents=remaining;st.luck_seed=luck;st.luck_seed_inited=true;st.tal_lucky=0;st.exchange_count=+(st.exchange_count||0)+1;
+  501: function firstExchangeBranch(base,c,n){
+  509:  const ex=exchangeOnceExact(st,idx);
+  514:    st.talents.map(x=>+x.id).join(","),st.exchange_count||0].join("|");
+  864:  const conf=exchangeConflictsExact(SIM),out=[];
+  867:    if(!r?.can_exchange)continue;
+  905:  sel.onchange=()=>{SIM_FIND_STATE={key:"",rank:0,hit:null};};
+  1008: function simPrelockFirstExchangeAnchor(){
+  1015:  let seq=[];try{seq=exchangeSequence(+SIM.seed,SIM,1)}catch(e){}
+  1029: function simUpdateExchangePreview(){
+  1030:  if(!SIM){simExchangePreview.innerHTML="";return}
+  1033:    const seq=exchangeSequence(seed,SIM,15);
+  1034:    simExchangePreview.innerHTML=`<b>${SIM.luck_seed_inited?"현재 고정 치환열 · 다음 치환맥부터":"현재 최초치환 기준 예상열"}</b> · seed ${seed}<br>${seq.map((x,i)=>`${i+1}. ${x.name}`).join(" → ")}`;
+  1035:  }catch(e){simExchangePreview.innerHTML=`<span class="bad">${e.message}</span>`}
+  1097:    h+=`<tr${rowStyle}><td>${state}</td><td class="num">${x.wash_no}</td><td class="num">${need}</td><td class="num">${total}</td><td class="q4">${x.talent_name}</td><td>${x.was_pity?"★":"-"}</td><td>${conf}${x.earlier_conflict_wash_no!=null?` <span class="small">#${x.earlier_conflict_wash_no}</span>`:""}</td><td>${x.can_exchange&&!x.was_pity&&!x.hasPriorPity?"가능":"불가"}</td></tr>`;
+  1105:    simExchangeSel.innerHTML="";
+  1107:    simExchangePreview.innerHTML="";
+  1119:  const slotConflictRows=exchangeConflictsExact(SIM);
+  1140:    const canExchange=!!(slotConflictRows[i]?.can_exchange && +t?.weight===4);
+  1141:    const exchangeIcon=canExchange?`<span class="sim-exchange-icon" title="충돌교체 가능" aria-label="충돌교체 가능"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10l-2.6-2.6M17 17H7l2.6 2.6M18.5 7.5A7 7 0 0 1 19 10M5 14a7 7 0 0 1 .5-2.5"/></svg></span>`:"";
+  1143:      <div style="display:flex;align-items:center;gap:2px"><b>슬롯 ${i+1}</b> · <span class="q${Math.max(1,Math.min(4,+t?.weight||1))}">${nm(sl.id)}</span>${exchangeIcon}</div>
+  1162:        const canImmediate=exchangeConflictsExact(test).some(r=>r?.can_exchange);
+  1181:  simExchangeSel.innerHTML=rows.length
+  1187:  simUpdateExchangePreview();
+  1396:  let changed=0;
+  1398:    if(t.locked){t.locked=false;changed++}
+  1400:  simLog("전체 잠금 해제",`${changed}개 잠금 해제`);
+  1414: function simExchange(){
+  1416:  const idx=Number(simExchangeSel.value);
+  1421:    const ex=exchangeOnceExact(SIM,idx);
+  1429: function simPreparedExchangeTarget(st){
+  1433:  try{seq=exchangeSequence(+st.luck_seed,st,Math.max(8,slots+4))}catch(e){}
+  1478:  const exTarget=simPreparedExchangeTarget(start);
+  1579: async function simWashToNextExchangeAnchor(){
+  1596:  try{seq=exchangeSequence(+SIM.luck_seed,SIM,Math.max(8,slots+4))}catch(e){}
+  1699: function simPreviewExchange(){
+  1701:  simUpdateExchangePreview();
+  1743:    CANDS=findExchangeCandidates(st,RAW); // 재스캔 금지
+  1762:    <td>${x.can_exchange&&!x.was_pity&&!x.hasPriorPity?"가능":"불가"}${x.block_reason?`<br><span class="small">${x.block_reason}</span>`:""}</td></tr>`;
+  1810:    const st=stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi()),rows=exchangeNRows(st,c,+nMax.value,15);
+  1831:  const f=saveFile.files&&saveFile.files[0];
+  1842:    const parsed=JSON.parse(txt);
+  1892: saveFile.onchange=()=>{
+  1893:  const f=saveFile.files&&saveFile.files[0];
+  1897: roleSel.onchange=()=>{
+  1903: vipSel.onchange=()=>{
+  1907: rawCount.onchange=()=>{};
+  1908: rawSlots.onchange=()=>{
+  1940: simWashNextExchangeAnchor.onclick=simWashToNextExchangeAnchor;
+  1944: simExchangeBtn.onclick=simExchange;
+  1945: simPreviewExchangeBtn.onclick=simPreviewExchange;
+[1] len=291386 sha=4b2bbda66ceeb6a8
+[2] len=1046433 sha=36ca4a60c032fa37
+  SAVE_RELATED
+  28:   const sharedSaveInput = document.getElementById('sharedSaveFile');
+  29:   const sharedSaveName = document.getElementById('sharedSaveName');
+  30:   const sharedSaveStatus = document.getElementById('sharedSaveStatus');
+  31:   let sharedSaveText = null;
+  32:   let sharedSaveFileName = null;
+  36:       const target = document.getElementById('saveFile');
+  62:     if (!sharedSaveText) return false;
+  67:       const parsed = JSON.parse(sharedSaveText);
+  70:       } else if (typeof w.loadSaveData === 'function') {
+  71:         w.loadSaveData(parsed);
+  76:         w.appendLog(`[save.json] ${sharedSaveFileName || '공통 세이브'} 불러오기 완료`);
+  85:   sharedSaveInput?.addEventListener('change', async () => {
+  86:     const file = sharedSaveInput.files?.[0];
+  88:     sharedSaveStatus.textContent = `${file.name} 불러오는 중...`;
+  90:       sharedSaveText = await file.text();
+  91:       JSON.parse(sharedSaveText);
+  92:       sharedSaveFileName = file.name;
+  93:       sharedSaveName.textContent = file.name;
+  102:       document.getElementById('sharedSaveBar')?.classList.add('loaded');
+  107:       sharedSaveStatus.innerHTML = `<span class="bad">세이브 불러오기 실패: ${e.message || e}</span>`;
