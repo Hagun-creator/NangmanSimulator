@@ -1,24 +1,24 @@
-name: Deploy v3.27
+name: Deploy v3.28
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v327:
+  build-v328:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build and validate v3.27
-        run: python scripts/build_v327.py
-      - name: Commit v3.27
+      - name: Build and validate v3.28
+        run: python scripts/build_v328.py
+      - name: Commit v3.28
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Nangman_Integrated_Simulator_v3_27.html latest.json README.md
-          git commit -m "Start route search from skip count times four pills in v3.27" || exit 0
+          git add scripts/build_v328.py Nangman_Integrated_Simulator_v3_28.html latest.json README.md
+          git commit -m "Replace daomai route brute force with indexed collision engine v3.28" || exit 0
           git pull --rebase origin main
           git push
