@@ -1,0 +1,23 @@
+name: Deploy v2.90
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  build-v290:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build and validate v2.90
+        run: python scripts/build_v290.py
+      - name: Commit v2.90
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nangman_Integrated_Simulator_v2_90.html index.html README.md
+          git commit -m "Add minimal-cost jammaek pull routes in v2.90"
+          git push
