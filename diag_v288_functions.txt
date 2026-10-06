@@ -1,0 +1,211 @@
+=== EXCHANGE ===
+function exchangeSequence(luckSeed,state,count=15){
+ const eng=engineFor(state),out=[];let seed=+luckSeed,draws=0;
+ while(out.length<count){let id;[id,seed]=rawPurple(seed,eng);if(++draws>200000)throw Error("purple stream stop");if(eng.allowed.has(id))out.push({id,name:BYID.get(id).name_ko||BYID.get(id).name,seed})}
+ return out;
+}
+
+
+=== RAW2 ===
+async function analyzeRawUntilSecondPurple(){
+ if(!SAVE){rawFullSummary.innerHTML='<div class="warn">세이브를 먼저 불러오세요.</div>';return}
+ const r=roleObj();if(!r){rawFullSummary.innerHTML='<div class="warn">캐릭터를 선택하세요.</div>';return}
+ rawFullSummary.innerHTML='<div class="warn">원시맥 #1부터 두 번째 자맥까지 계산 중...</div>';
+ rawFullBody.innerHTML="";
+ await uiYield();
+
+ let st=stateFromSave(SAVE,r,+vipSel.value);
+ st=unlockAll(st);
+ let rows=[],purpleRows=[],guard=10000;
+
+ while(guard-->0 && purpleRows.length<2){
+   const beforeBars=+st.total_talent_bars;
+   const tr=washOnce(st);
+   st=tr.state;
+   const unlocked=tr.result.talents.filter(t=>!t.locked);
+
+   for(let i=0;i<unlocked.length;i++){
+     const id=+unlocked[i].id;
+     const it=BYID.get(id);
+     if(!it)continue;
+     const rec={
+       rawNo:beforeBars+i+1,
+       wash:+st.total_wash,
+       id,
+       name:nm(id),
+       weight:+it.weight,
+       type:+it.type
+     };
+     rows.push(rec);
+     if(+it.weight===4){
+       purpleRows.push(rec);
+       if(purpleRows.length>=2)break;
+     }
+   }
+   if(st.total_wash%80===0){
+     rawFullSummary.innerHTML=`<div class="warn">계산 중 · 세수 ${st.total_wash.toLocaleString()}회 · 원시 #${st.total_talent_bars.toLocaleString()} · 자맥 ${purpleRows.length}/2</div>`;
+     await uiYield();
+   }
+ }
+
+ if(purpleRows.length<2){
+   rawFullSummary.innerHTML='<div class="bad">두 번째 자맥까지 찾지 못했습니다.</div>';
+   return;
+ }
+
+ const p1=purpleRows[0],p2=purpleRows[1];
+ let h="";
+ for(const x of rows){
+   const c1=isConflictLowerFor(p1.id,x.id);
+   const c2=isConflictLowerFor(p2.id,x.id);
+   h+=`<tr>
+     <td class="num">${x.rawNo}</td>
+     <td class="num">${x.wash}</td>
+     <td class="q${Math.max(1,Math.min(4,x.weight))}">${x.name}</td>
+     <td>${qualityLabel(x.weight)}</td>
+     <td>${x.type}</td>
+     <td>${c1?'<b>● 가능</b>':"-"}</td>
+     <td>${c2?'<b>● 가능</b>':"-"}</td>
+   </tr>`;
+ }
+ rawFullBody.innerHTML=h;
+
+ const beforeP1=rows.filter(x=>x.rawNo<p1.rawNo && isConflictLowerFor(p1.id,x.id));
+ const beforeP2=rows.filter(x=>x.rawNo<p2.rawNo && isConflictLowerFor(p2.id,x.id));
+ const near1=beforeP1.length?beforeP1[beforeP1.length-1]:null;
+ const near2=beforeP2.length?beforeP2[beforeP2.length-1]:null;
+
+ rawFullSummary.innerHTML=`<div class="good">
+ <b>1번 자맥</b>: 원시 #${p1.rawNo} ${p1.name}
+ · 가장 가까운 충돌맥: ${near1?`${near1.name} (#${near1.rawNo})`:"없음"}<br>
+ <b>2번 자맥</b>: 원시 #${p2.rawNo} ${p2.name}
+ · 가장 가까운 충돌맥: ${near2?`${near2.name} (#${near2.rawNo})`:"없음"}<br>
+ <span class="small">원시 #1부터 두 번째 자맥이 나온 행까지 전부 표시합니다. 교체 N=18 검토 시 1·2번 자맥 전에 필요한 하위맥이 실제로 존재하는지 확인할 수 있습니다.</span>
+ </div>`;
+}
+
+
+
+
+
+=== PITYDAO ===
+async function analyzeFirstPityDaomai(){
+ if(!SAVE){daoFirstResult.innerHTML='<div class="warn">세이브를 먼저 불러오세요.</div>';return}
+ const base=stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi());
+ const slots=+QUAL[String(base.zizhi)]?.slots||0;
+ if(slots<=0){daoFirstResult.innerHTML='<div class="warn">원시 자맥 탭에서 계산용 칸을 1칸 이상 개방하세요.</div>';return}
+ const pityAt=+QUAL[String(base.zizhi)]?.base_pity||0;
+ if(!pityAt){daoFirstResult.innerHTML='<div class="warn">현재 개방 칸에는 천장 기준이 없습니다.</div>';return}
+
+ daoFirstResult.innerHTML='<div class="warn">원시 #600 이후 천장 직전 일반맥별 seed → 교체맥 15개 계산 중...</div>';
+ await uiYield();
+
+ // v22.16: 도맥 제거 경로를 후보마다 다시 세수하지 않는다.
+ // 천장 직전으로 당겨질 수 있는 일반맥의 핵심 값은 그 일반맥이 채택된 직후의 BornTalent seed다.
+ // 한 번의 원시 normal stream 스캔으로 #600 이후 후보와 seed를 모은 뒤,
+ // 각 seed에서 천장 자맥 1개를 뽑고 그 뒤 Luck/교체 자맥 15개를 바로 계산한다.
+ const eng=engineFor(base);
+ let seed=+base.seed, rc=+(base.born_talent_rc||0), intl=!!base.international_wash;
+ let talLucky=+base.tal_lucky||0, rawNo=0, washNo=0;
+ const candidates=[];
+ const minRaw=600;
+ const maxGuard=200000;
+ let guard=maxGuard;
+
+ // 잠금 없는 계산용 원시 흐름. 한 페이지 내 중복만 삼킨다.
+ while(talLucky<pityAt && guard-->0){
+   washNo++;
+   const seen=new Set();
+   let accepted=0;
+   while(accepted<slots && guard-->0){
+     let id;
+     [id,seed]=rawNormal(seed,eng,intl?rc:0);
+     if(intl)rc++;
+     if(!eng.allowed.has(id)||seen.has(id))continue;
+     const it=BYID.get(id);
+     if(!it)continue;
+     // 첫 자맥=천장 분기만 다루므로 자연 자맥이 먼저 나오면 이 도맥표 대상이 아니다.
+     if(+it.weight===4){
+       daoFirstResult.innerHTML=`<div class="warn">원시 #${rawNo+1}에서 자연 자맥 <b>${nm(id)}</b>이 천장보다 먼저 나옵니다. 첫 자맥=천장 도맥법 분기 대상이 아닙니다.</div>`;
+       return;
+     }
+     seen.add(id); accepted++; rawNo++;
+     if(rawNo>=minRaw){
+       candidates.push({rawNo,washNo,id,name:nm(id),seedAfter:+seed,rcAfter:+rc});
+     }
+   }
+   talLucky+=slots;
+   if(washNo%80===0)await uiYield();
+ }
+ if(guard<=0){daoFirstResult.innerHTML='<div class="bad">원시 흐름 스캔 한도를 초과했습니다.</div>';return}
+ if(!candidates.length){daoFirstResult.innerHTML='<div class="warn">원시 #600 이후 천장 직전 후보 일반맥이 없습니다.</div>';return}
+
+ // 후보 일반맥 직후 seed가 바로 다음 천장 삽입의 Luck seed 시작점이라고 보고,
+ // 그 seed에서 허용되는 첫 자맥을 천장 자맥으로, 이후 15개를 교체맥으로 뽑는다.
+ function purpleFromSeed(startSeed,count){
+   let luck=+startSeed, out=[], spins=0;
+   while(out.length<count && spins++<200000){
+     let id;[id,luck]=rawPurple(luck,eng);
+     if(!eng.allowed.has(id))continue;
+     out.push({id,name:nm(id),seedAfter:+luck});
+   }
+   return {rows:out,lastSeed:+luck};
+ }
+
+ const rows=[];
+ for(let i=0;i<candidates.length;i++){
+   const c=candidates[i];
+   const p=purpleFromSeed(c.seedAfter,16); // 1개 천장 + 뒤 15개 교체
+   if(!p.rows.length)continue;
+   rows.push({
+     ...c,
+     pity:p.rows[0],
+     seq:p.rows.slice(1,16),
+     luckStart:+c.seedAfter
+   });
+   if(i%120===119)await uiYield();
+ }
+
+ let h=`<div class="good"><b>천장 도맥 seed 표 · 원시 #600 이후</b><br>
+ <span class="small">계산용 열린 칸 <b>${slots}칸</b> · 천장 기준 ${pityAt}. 도맥법으로 중복 일반맥을 제거해 천장 직전 일반맥을 바꾸면, 그 일반맥 직후의 <b>BornTalent seed</b>가 달라지고 그 seed에서 천장 자맥과 이후 교체맥 서열이 달라집니다. 후보별 전체 도맥 경로 재시뮬레이션은 하지 않아 속도를 줄였습니다.</span></div>`;
+ h+='<div class="scroll"><table><thead><tr><th>직전 원시 #</th><th>천장 직전 일반 자질</th><th>직전 seed</th><th>천장 자맥</th>';
+ for(let i=1;i<=15;i++)h+=`<th>교체 ${i}</th>`;
+ h+='</tr></thead><tbody>';
+ for(const r of rows){
+   h+=`<tr><td class="num">${r.rawNo}</td><td>${r.name}</td><td class="num">${r.luckStart}</td><td class="q4">${r.pity.name}</td>`;
+   for(let i=0;i<15;i++)h+=`<td class="q4">${r.seq[i]?.name||'-'}</td>`;
+   h+='</tr>';
+ }
+ h+='</tbody></table></div>';
+ h+=`<div class="small">표는 #600부터 기본 천장 직전까지의 일반맥을 후보로 봅니다. 같은 이름의 일반 자질이라도 원시 위치가 다르면 seed가 다를 수 있으므로 원시 #별로 따로 표시합니다.</div>`;
+ daoFirstResult.innerHTML=h;
+}
+
+
+
+=== WASHONCE ===
+function washOnce(before){
+ const s=dc(before),eng=engineFor(s),q=+s.zizhi,slots=+QUAL[String(q)].slots;
+ const kept=s.talents.filter(t=>t.locked).map(dc),locks=kept.length;if(locks>=slots)throw Error("모든 슬롯 잠금");
+ const cost=COST[slots][locks];let seed=+s.seed,rc=+(s.born_talent_rc||0),luck=+(s.luck_seed||0),linit=!!s.luck_seed_inited;
+ const intl=!!s.international_wash,pityArmed=+s.tal_lucky>=+QUAL[String(q)].base_pity;let pityActive=pityArmed;
+ let talents=kept,seen=new Set(kept.map(t=>+t.id)),purplePage=false,pityTriggered=false,draws=0;
+ const quals={"1":+(s.quality_counts?.["1"]||0),"2":+(s.quality_counts?.["2"]||0),"3":+(s.quality_counts?.["3"]||0),"4":+(s.quality_counts?.["4"]||0)};
+ while(talents.length<slots){
+   let c;if(pityActive){if(!linit){luck=seed;linit=true}[c,luck]=rawPurple(luck,eng)}
+   else{[c,seed]=rawNormal(seed,eng,intl?rc:0);if(intl)rc++}
+   if(++draws>100000)throw Error("wash draw did not converge");
+   if(!eng.allowed.has(c)||seen.has(c))continue;
+   const w=+BYID.get(c).weight;if(w===4&&purplePage)continue;
+   talents.push({id:c,locked:false});seen.add(c);quals[String(w)]++;
+   if(w===4){purplePage=true;pityTriggered=pityActive;pityActive=false}
+ }
+ const washNo=+s.total_wash+1,pills=+s.total_pills+cost,prev=s.last_purple_total_pills;
+ const gap=!purplePage?null:pills-(prev||0),wasFirst=purplePage&&+s.gold_count===0;
+ Object.assign(s,{seed,luck_seed:luck,luck_seed_inited:linit,talents,tal_lucky:purplePage?0:+s.tal_lucky+slots-locks,
+ total_wash:washNo,total_talent_bars:+s.total_talent_bars+slots-locks,total_pills:pills,bag_pills:Math.max(0,+s.bag_pills-cost),
+ gold_count:+s.gold_count+(purplePage?1:0),pity_count:+s.pity_count+(pityTriggered?1:0),quality_counts:quals});
+ if(intl)s.born_talent_rc=rc;if(purplePage)s.last_purple_total_pills=pills;
+ return {state:s,result:{wash_no:washNo,talents:dc(talents),got_gold:purplePage,pills_used:cost,total_pills:pills,was_pity:pityTriggered,
+ pity_armed:pityArmed,tal_lucky:s.tal_lucky,purple_gap_pills:gap,is_first_purple:wasFirst,raw_draws:draws}};
+}
