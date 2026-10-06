@@ -1,0 +1,85 @@
+name: Deploy v2.80 definitive mobile fix
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-v280:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build v2.80 from v2.79
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64, re
+
+          src = Path('Nangman_Integrated_Simulator_v2_79.html')
+          dst = Path('Nangman_Integrated_Simulator_v2_80.html')
+          if not src.exists():
+              raise SystemExit('v2.79 source not found')
+
+          text = src.read_text(encoding='utf-8')
+          # v2.79 already contains the corrected real-newline mobile CSS.
+          # Keep that CSS, only advance the visible/current version and marker IDs.
+          text = text.replace('v2.79', 'v2.80')
+          text = text.replace('v2_79', 'v2_80')
+          text = text.replace('id="v279-mobile-integrated"', 'id="v280-mobile-integrated"')
+
+          m = re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;', text)
+          if not m:
+              raise SystemExit('embedded equipment payload not found')
+          inner = base64.b64decode(m.group(1)).decode('utf-8')
+          inner = inner.replace('id="v279-mobile-equipment"', 'id="v280-mobile-equipment"')
+          inner = inner.replace('v2.79', 'v2.80')
+
+          # Hard validation for the exact regression: literal backslash-n must not
+          # appear around either injected mobile style block.
+          for sid, payload in [('v280-mobile-integrated', text), ('v280-mobile-equipment', inner)]:
+              pos = payload.find(f'<style id="{sid}">')
+              if pos < 0:
+                  raise SystemExit(f'{sid} style block missing')
+              left = payload[max(0, pos-8):pos]
+              end = payload.find('</style>', pos)
+              right = payload[end+8:end+16] if end >= 0 else ''
+              if '\\n' in left or '\\n' in right:
+                  raise SystemExit(f'literal newline token remains around {sid}')
+
+          enc = base64.b64encode(inner.encode('utf-8')).decode('ascii')
+          text = text[:m.start()] + f'const EQUIPMENT_HTML_B64="{enc}";' + text[m.end():]
+
+          if 'v2.78' in text:
+              # v2.78 may exist in historical text/data, but it must not be the current title.
+              head = text[:5000]
+              if '<title>낭만강호 통합 시뮬레이터 v2.78</title>' in head:
+                  raise SystemExit('stale v2.78 title remains')
+          if '<title>낭만강호 통합 시뮬레이터 v2.80</title>' not in text[:5000]:
+              raise SystemExit('v2.80 title missing')
+
+          dst.write_text(text, encoding='utf-8')
+
+          idx = Path('index.html')
+          s = idx.read_text(encoding='utf-8')
+          s = s.replace('v2.79','v2.80').replace('v2_79','v2_80')
+          idx.write_text(s, encoding='utf-8')
+
+          readme = Path('README.md')
+          if readme.exists():
+              s = readme.read_text(encoding='utf-8').replace('v2.79','v2.80')
+              readme.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit generated v2.80
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nangman_Integrated_Simulator_v2_80.html index.html README.md
+          git commit -m "Deploy v2.80 definitive mobile fix"
+          git push
