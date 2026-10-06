@@ -1,0 +1,23 @@
+name: Deploy v2.98
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  build-v298:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build and validate v2.98
+        run: python scripts/build_v298.py
+      - name: Commit v2.98
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nangman_Integrated_Simulator_v2_98.html index.html latest.json README.md
+          git commit -m "Restore daomai pill route panel in v2.98" || exit 0
+          git push
