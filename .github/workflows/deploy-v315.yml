@@ -1,24 +1,24 @@
-name: Deploy v3.20
+name: Deploy v3.21
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v320:
+  build-v321:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build and validate v3.20
-        run: python scripts/build_v320.py
-      - name: Commit v3.20
+      - name: Build and validate v3.21
+        run: python scripts/build_v321.py
+      - name: Commit v3.21
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Nangman_Integrated_Simulator_v3_20.html latest.json README.md
-          git commit -m "Share current pills and show route search progress in v3.20" || exit 0
+          git add Nangman_Integrated_Simulator_v3_21.html latest.json README.md
+          git commit -m "Set raw 600 through six post-pity window in v3.21" || exit 0
           git pull --rebase origin main
           git push
