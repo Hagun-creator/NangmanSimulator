@@ -10,10 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python scripts/diag_v288_daomai.py
+      - run: |
+          python scripts/diag_v288_daomai.py
+          python scripts/diag_v288_functions.py
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add diag_v288_daomai.txt
-          git commit -m "Add v2.88 daomai diagnostic" || exit 0
+          git add diag_v288_daomai.txt diag_v288_functions.txt
+          git commit -m "Refresh v2.88 daomai diagnostics" || exit 0
           git push
