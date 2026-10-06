@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Fix current button copy and build v3.21
+      - name: Fix current copy/guards and build v3.21
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -23,7 +23,9 @@ jobs:
           if inject not in s:
               if anchor not in s: raise SystemExit('range UI anchor missing')
               s=s.replace(anchor,anchor+inject,1)
-              p.write_text(s,encoding='utf-8')
+          s=s.replace("'class=\"linkBtn dao-pull-v295\"','잡맥법 최소 세수단 경로','renderDaoSearchProgressV320',\n 'readCurrentPillBalanceV320','현재 검색 <b>#${info.searchNo.toLocaleString()}</b>'",
+                      "'class=\"linkBtn dao-pull-v295\"','잡맥법 최소 세수단 경로','daoCurrentPillsValue',\n '현재 검색 <b>#${directChecked}</b>','누적 잠금 검사'")
+          p.write_text(s,encoding='utf-8')
           PY
           python scripts/build_v321.py
       - name: Commit v3.21
