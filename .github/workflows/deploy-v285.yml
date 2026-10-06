@@ -1,0 +1,82 @@
+name: Deploy v2.85 with permanent guards
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  build-v285:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build v2.85 and enforce guards
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,base64
+          src=Path('Nangman_Integrated_Simulator_v2_84.html')
+          dst=Path('Nangman_Integrated_Simulator_v2_85.html')
+          if not src.exists(): raise SystemExit('v2.84 source missing')
+          text=src.read_text(encoding='utf-8')
+          m=re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;',text)
+          if not m: raise SystemExit('embedded equipment payload missing')
+          inner=base64.b64decode(m.group(1)).decode('utf-8','replace')
+
+          # Remove accidental visible literal newline tokens that can render in UI.
+          inner=inner.replace('\\n \\n','').replace('\\n\\n','').replace('/n /n','').replace('/n/n','')
+          text=text.replace('\\n \\n','').replace('\\n\\n','').replace('/n /n','').replace('/n/n','')
+
+          # Advance every visible/current version marker from v2.84 to v2.85.
+          text=text.replace('v2.84','v2.85').replace('v2_84','v2_85')
+          text=text.replace('id="v284-mobile-integrated"','id="v285-mobile-integrated"')
+          text=text.replace('id="v284-mobile-equipment"','id="v285-mobile-equipment"')
+
+          enc=base64.b64encode(inner.encode('utf-8')).decode('ascii')
+          text=text[:m.start()]+f'const EQUIPMENT_HTML_B64="{enc}";'+text[m.end():]
+          dst.write_text(text,encoding='utf-8')
+          Path('index.html').write_text(text,encoding='utf-8')
+
+          readme=Path('README.md')
+          if readme.exists():
+              s=readme.read_text(encoding='utf-8')
+              s=re.sub(r'현재 사이트 버전:\s*v[0-9.]+','현재 사이트 버전: v2.85',s)
+              readme.write_text(s,encoding='utf-8')
+
+          # Permanent guard rules for all future releases.
+          guard=Path('scripts/validate_release.py')
+          guard.parent.mkdir(parents=True,exist_ok=True)
+          guard.write_text(r'''from pathlib import Path
+import re,sys,base64
+ver=sys.argv[1] if len(sys.argv)>1 else None
+if not ver: raise SystemExit('usage: validate_release.py vX.YY')
+fn='Nangman_Integrated_Simulator_'+ver.replace('.','_')+'.html'
+paths=[Path(fn),Path('index.html')]
+for p in paths:
+    if not p.exists(): raise SystemExit(f'missing {p}')
+    t=p.read_text(encoding='utf-8')
+    if f'<title>낭만강호 통합 시뮬레이터 {ver}</title>' not in t[:6000]: raise SystemExit(f'title mismatch in {p}')
+    if ver not in t: raise SystemExit(f'version missing in {p}')
+    if any(x in t for x in ['\\\\n \\\\n','/n /n','/n/n']): raise SystemExit(f'visible newline token found in {p}')
+    m=re.search(r'const\\s+EQUIPMENT_HTML_B64\\s*=\\s*"([A-Za-z0-9+/=]+)"\\s*;',t)
+    if m:
+        inner=base64.b64decode(m.group(1)).decode('utf-8','replace')
+        if any(x in inner for x in ['\\\\n \\\\n','/n /n','/n/n']): raise SystemExit(f'visible newline token found in embedded equipment of {p}')
+r=Path('README.md').read_text(encoding='utf-8')
+if f'현재 사이트 버전: {ver}' not in r: raise SystemExit('README version mismatch')
+print('release validation OK',ver)
+''',encoding='utf-8')
+
+          # Validate this release now.
+          import subprocess
+          subprocess.check_call(['python','scripts/validate_release.py','v2.85'])
+          PY
+      - name: Commit v2.85 and permanent validator
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nangman_Integrated_Simulator_v2_85.html index.html README.md scripts/validate_release.py
+          git commit -m "Deploy v2.85 and add permanent release guards"
+          git push
