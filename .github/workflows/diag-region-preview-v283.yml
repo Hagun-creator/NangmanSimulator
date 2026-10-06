@@ -1,0 +1,41 @@
+name: Diagnose region preview for v2.83
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract preview/search call sites
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,base64
+          t=Path('Nangman_Integrated_Simulator_v2_82.html').read_text(encoding='utf-8')
+          m=re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;',t)
+          inner=base64.b64decode(m.group(1)).decode('utf-8','replace')
+          terms=['rkMakePreviewNative233','uniqueFixedRoutes229','function runSearch','async function','R.results','results=','searchToken','rt.npc','npc_id']
+          lines=inner.splitlines(); hit=set()
+          for i,l in enumerate(lines):
+            if any(x in l for x in terms):
+              for j in range(max(0,i-12),min(len(lines),i+20)):hit.add(j)
+          out=[]; prev=-2
+          for j in sorted(hit):
+            if j!=prev+1: out.append(f'\n--- {j+1} ---')
+            out.append(f'{j+1}: {lines[j]}'); prev=j
+          Path('diag_region_preview_v283.txt').write_text('\n'.join(out)[:180000],encoding='utf-8')
+          PY
+      - name: Commit diagnostic
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diag_region_preview_v283.txt
+          git commit -m "Add region preview diagnostic for v2.83" || exit 0
+          git push
