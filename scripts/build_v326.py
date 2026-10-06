@@ -16,8 +16,6 @@ a=text.find('async function showDaoPullRouteV290(')
 b=text.find('\nasync function showDaoExchangeWindowV288(){',a)
 if a<0 or b<0: raise SystemExit('route boundary missing')
 route=text[a:b]
-
-# Add a cheap skip-count estimator based on the already-built raw stream trace.
 anchor=""" function traceFreePage(startCursor){
    let cursor=startCursor,seen=new Set(),accepted=[],skipped=[];
    while(accepted.length<slots && cursor<+d.firstPity.rawNo){
@@ -38,13 +36,10 @@ insert=anchor+""" function estimatedSkipCount(pg,lockIds,holdCount){
 """
 if anchor not in route: raise SystemExit('traceFreePage anchor missing')
 route=route.replace(anchor,insert,1)
-
-# Replace generic search loop with skip-guided pruning before any expensive exact candidate/probe.
 start=route.find(' outer:\n for(const sh of shapes){')
 end=route.find('\n if(!best){',start)
 if start<0 or end<0: raise SystemExit('generic outer loop boundary missing')
-old=route[start:end]
-new=r''' outer:
+new=r''' outer:{
  // shift is a heuristic only. First search candidates whose actual traced duplicate skips are
  // near the clicked row's position/skip number. If none succeed, widen the tolerance gradually.
  const skipTolerances=targetShift>0?[0,1,2,4,8,Number.POSITIVE_INFINITY]:[Number.POSITIVE_INFINITY];
@@ -89,22 +84,17 @@ new=r''' outer:
          if(best && best.cost===sh.cost)break outer;
        }
      }
-     // If this whole cheap cost shape cannot even approach the target skip count in the current
-     // tolerance layer, it was pruned without expensive Born-seed probes.
      if(!shapeHasPlausible && targetShift>0 && Number.isFinite(tol))continue;
    }
  }
+ }
 '''
 route=route[:start]+new+route[end:]
-
-# Explain the heuristic in the result summary when available.
 route=route.replace("`경로 검증: <b>${best.label||'비용우선 탐색'}</b></div>`;",
                     "`경로 검증: <b>${best.label||'비용우선 탐색'}</b>${best.estimatedSkips!=null?` · 검증 전 예상 스킵 ${best.estimatedSkips}`:''}</div>`;",1)
-
-for x in ['function estimatedSkipCount(','skipTolerances','생략지표 우선 비용탐색','예상 실제 스킵','shapeHasPlausible']:
+for x in ['function estimatedSkipCount(','skipTolerances','생략지표 우선 비용탐색','예상 실제 스킵','shapeHasPlausible','outer:{']:
  if x not in route: raise SystemExit('v3.26 guard missing: '+x)
 text=text[:a]+route+text[b:]
-
 DST.write_text(text,encoding='utf-8')
 Path('latest.json').write_text(json.dumps({'version':'v3.26','file':'Nangman_Integrated_Simulator_v3_26.html'},ensure_ascii=False,indent=2),encoding='utf-8')
 r=Path('README.md');s=r.read_text(encoding='utf-8');s=re.sub(r'현재 사이트 버전:\s*v?[0-9.]+','현재 사이트 버전: v3.26',s);r.write_text(s,encoding='utf-8')
