@@ -1,24 +1,24 @@
-name: Deploy v3.32
+name: Deploy v3.33
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v332:
+  build-v333:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build and validate v3.32
-        run: python scripts/build_v332.py
-      - name: Commit v3.32
+      - name: Build and validate v3.33
+        run: python scripts/build_v333.py
+      - name: Commit v3.33
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_v332.py Nangman_Integrated_Simulator_v3_32.html latest.json README.md
-          git commit -m "Use exact wash state search for daomai routes in v3.32" || exit 0
+          git add scripts/build_v333.py Nangman_Integrated_Simulator_v3_33.html latest.json README.md
+          git commit -m "Time-slice exact daomai route search in v3.33" || exit 0
           git pull --rebase origin main
           git push
