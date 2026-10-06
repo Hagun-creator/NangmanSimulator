@@ -1,0 +1,74 @@
+async function showDaoRawBeforeV288(){ => 75547
+async function showDaoExchangeWindowV288(){ => 79702
+function daoDeleteCandidatesV295 => 76520
+function daoDeleteCandidatesV290 => -1
+function showDaoPullRouteV290 => 77485
+DAO_V290_ROUTE_ROWS => 76470
+DAO_V290_WINDOW => 76498
+dao-pull-v295 => 82397
+dao-pull-v294 => -1
+let DAO_V288_CACHE=null; => 73855
+async function analyzeFirstPityDaomai() => 83470
+--- raw snippet ---
+async function showDaoRawBeforeV288(){
+ daoRawBeforeResult.innerHTML='<div class="warn">첫 천장 전 원시맥 계산 중...</div>';
+ daoExchangeWindowResult.innerHTML='';
+ try{
+   const d=await daoWindowCachedV288();
+   const rows=d.rows.filter(x=>x.rawNo<d.firstPity.rawNo);
+   let h=`<div class="good"><b>첫 천장</b>: 원시 #${d.firstPity.rawNo} ${d.firstPity.name}<br><span class="small">아래 표는 천장 행을 제외한 직전까지의 모든 원시맥입니다.</span></div>`;
+   h+='<div class="scroll"><table><thead><tr><th>원시 #</th><th>세수 회차</th><th>맥 이름</th><th>등급</th><th>계열(type)</th></tr></thead><tbody>';
+   for(const x of rows)h+=`<tr><td class="num">${x.rawNo}</td><td class="num">${x.wash}</td><td class="q${Math.max(1,Math.min(4,x.weight))}">${x.name}</td><td>${qualityLabel(x.weight)}</td><td>${x.type}</td></tr>`;
+   h+='</tbody></table></div>';
+   daoRawBeforeResult.innerHTML=h;
+ }catch(e){daoRawBeforeResult.innerHTML=`<div class="warn">${e.message||e}</div>`}
+}
+let DAO_V290_ROUTE_ROWS=[];
+let DAO_V290_WINDOW=null;
+function daoDeleteCandidatesV295(d){
+ const pre=d.rows.filter(x=>x.rawNo<d.firstPity.rawNo && x.weight<4);
+ const by=new Map();
+ for(const x of pre){if(!by.has(x.id))by.set(x.id,[]);by.get(x.id).push(x)}
+ const slots=+QUAL[String(d.pityState.zizhi)]?.slots||0;
+ const oneLockCost=(COST?.[slots]?.[1]??0);
+ const out=[];
+ for(const arr of by.values()){
+   for(let j=1;j<arr.length;j++){
+     const prev=arr[j-1], del=arr[j];
+     // Only accept the article's directly verifiable case:
+     // previous copy is in the immediately preceding wash/table and is held for one roll.
+     if(+del.wash!==+prev.wash+1)continue;
+     out.push({id:del.id,name:del.name,lockRaw:prev.rawNo,lockWash:prev.wash,deleteRaw:del.rawNo,deleteWash:del.wash,washes:1,pills:oneLockCost});
+   }
+ }
+ // User preference: nearest deletable duplicate to pi
+--- exchange snippet ---
+async function showDaoExchangeWindowV288(){
+ daoExchangeWindowResult.innerHTML='<div class="warn">천장 이후 원시맥별 교체맥 15개 계산 중...</div>';
+ daoRawBeforeResult.innerHTML='';
+ try{
+   const d=await daoWindowCachedV288();DAO_V290_WINDOW=d;
+   const baseState=dc(d.pityState),eng=engineFor(baseState),slots=+QUAL[String(baseState.zizhi)]?.slots||0;
+   const rows=[];
+   rows.push({rawNo:d.firstPity.rawNo,wash:d.firstPity.wash,id:d.firstPity.id,name:d.firstPity.name,kind:'천장',seed:+baseState.luck_seed,draws:exchangeSequence(+baseState.luck_seed,baseState,15)});
+   let seed=+baseState.seed,rc=+(baseState.born_talent_rc||0),intl=!!baseState.international_wash,rawNo=+d.firstPity.rawNo,washNo=+baseState.total_wash,guard=200000,stopPurple=null;
+   while(guard-->0&&!stopPurple){
+     washNo++;const seen=new Set();let accepted=0;
+     while(accepted<slots&&guard-->0){
+       let id;[id,seed]=rawNormal(seed,eng,intl?rc:0);if(intl)rc++;
+       if(!eng.allowed.has(id)||seen.has(id))continue;const it=BYID.get(id);if(!it)continue;
+       seen.add(id);accepted++;rawNo++;
+       if(+it.weight===4){stopPurple={rawNo,wash:washNo,id,name:nm(id)};break}
+       const branch=dc(baseState);branch.seed=+seed;if(intl)branch.born_talent_rc=+rc;
+       rows.push({rawNo,wash:washNo,id,name:nm(id),kind:'원시',seed:+seed,draws:exchangeSequence(+seed,branch,15)});
+     }
+     if(washNo%80===0)await uiYield();
+   }
+   if(guard<=0)throw Error('천장 이후 원시 흐름 스캔 한도를 초과했습니다.');
+   if(!stopPurple)throw Error('다음 원시 자맥을 찾지 못했습니다.');
+   let normalShift=0;
+   DAO_V290_ROUTE_ROWS=rows.map(r=>{
+     if(r.kind==='천장')return {...r,firstDraw:'',shift:0};
+     normalShift++;return {...r,firstDraw:r.draws[0]?.name||'',shift:normalShift};
+   });
+   let h=`<div class="good"><b>천장 포함 이후 원시맥별 교체맥 표</b><br><span class="small"><b>기본 천장</
