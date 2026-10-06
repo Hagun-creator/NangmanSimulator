@@ -1,7 +1,6 @@
 from pathlib import Path
 import re, subprocess, json
 
-# v3.38 trigger: remove the remaining top-summary drop label only.
 SRC=Path('Nangman_Integrated_Simulator_v3_37.html')
 DST=Path('Nangman_Integrated_Simulator_v3_38.html')
 if not SRC.exists(): raise SystemExit('v3.37 source missing')
@@ -14,14 +13,15 @@ he=text.lower().find('</head>')
 if he<0: raise SystemExit('head end missing')
 text=text[:he]+'''<script id="stable-root-url-v338">try{if(/Nangman_Integrated_Simulator_v3_38\\.html/i.test(location.pathname)){history.replaceState(null,'','/NangmanSimulator/');}}catch(e){}</script>\n'''+text[he:]
 
-old='세수 · 캐릭터 상태 · 장비 제작/정련/촉련/특수부가·망정/검왕각 · 드랍 · 세이브 데이터 준비 전'
-new='세수 · 캐릭터 상태 · 장비 제작/정련/촉련/특수부가·망정/검왕각 · 세이브 데이터 준비 전'
-if old not in text: raise SystemExit('target summary text missing')
-text=text.replace(old,new)
-text=re.sub(r'(세수\s*·\s*캐릭터 상태\s*·\s*장비 제작/정련/촉련/특수부가·망정/검왕각)\s*·\s*드랍\s*·\s*(세이브 데이터 준비 전)',r'\1 · \2',text)
+# Remove the remaining visible drop token from summary-style separator text.
+# Do not touch the drop-cleanup script's regex, because that script is what keeps old drop UI hidden.
+before=text
+text=re.sub(r'\s*·\s*드랍\s*·\s*', ' · ', text)
+text=re.sub(r'\s*·\s*드롭\s*·\s*', ' · ', text)
+if text==before: raise SystemExit('no visible drop separator token found')
+if re.search(r'세수[^<\n]{0,300}·\s*(?:드랍|드롭)\s*·[^<\n]{0,300}세이브 데이터 준비 전',text):
+    raise SystemExit('drop token still remains in top summary')
 
-if old in text: raise SystemExit('drop token remains in top summary')
-if new not in text: raise SystemExit('new top summary missing')
 if '낭만강호 시뮬레이터 v3.38' not in text[:12000]: raise SystemExit('title/version mismatch')
 for tok in ['remove-drop-ui-v337','solutionCostFloor=Math.max(0,goalNeed*4)','BEAM_PER_CELL=8']:
     if tok not in text: raise SystemExit('regression guard missing: '+tok)
@@ -37,4 +37,4 @@ for i,js in enumerate(scripts):
     p=Path(f'/tmp/v338_{i}.js');p.write_text(js,encoding='utf-8')
     cp=subprocess.run(['node','--check',str(p)],capture_output=True,text=True)
     if cp.returncode: raise SystemExit(cp.stderr[:3000])
-print('built v3.38: removed drop from top summary only')
+print('built v3.38: removed remaining visible drop token from summary text')
