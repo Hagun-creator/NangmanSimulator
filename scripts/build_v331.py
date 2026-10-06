@@ -2,20 +2,28 @@ from pathlib import Path
 import re, subprocess, json
 
 BASE=Path('Nangman_Integrated_Simulator_v3_29.html')
-DONOR=Path('Nangman_Integrated_Simulator_v3_30.html')
+PATCHER=Path('scripts/build_v330.py')
 DST=Path('Nangman_Integrated_Simulator_v3_31.html')
 if not BASE.exists(): raise SystemExit('v3.29 known-good base missing')
-if not DONOR.exists(): raise SystemExit('v3.30 route donor missing')
-base=BASE.read_text(encoding='utf-8')
-donor=DONOR.read_text(encoding='utf-8')
+if not PATCHER.exists(): raise SystemExit('v3.30 patch source missing')
+base0=BASE.read_text(encoding='utf-8')
+patchsrc=PATCHER.read_text(encoding='utf-8')
 
-def bump(s, old):
-    s=s.replace('v'+old,'v3.31').replace('v'+old.replace('.','_'),'v3_31')
-    s=re.sub(r'(?<![0-9])'+re.escape(old)+r'(?![0-9])','3.31',s)
-    return s
+# Pull the intended v3.30 engine literal from the patch source, not from the broken generated HTML.
+m=re.search(r"new=r'''(.*?)'''\nroute=route\[:start\]\+new\+route\[end:\]",patchsrc,re.S)
+if not m: raise SystemExit('cannot extract v3.30 engine literal')
+new_engine=m.group(1)
+if 'function makeEpisodes()' not in new_engine or 'function validateMulti(' not in new_engine:
+    raise SystemExit('v3.30 multi-episode engine literal incomplete')
 
-base=bump(base,'3.29')
-donor=bump(donor,'3.30')
+# Extract the intended multi-episode output insertion too.
+mo=re.search(r"route=route\[:pos\]\+r'''(.*?)''' \+ route\[pos:\]",patchsrc,re.S)
+if not mo: raise SystemExit('cannot extract v3.30 output insertion')
+output_insert=mo.group(1)
+
+# Version-only transformation of the known-good v3.29 base.
+base=base0.replace('v3.29','v3.31').replace('v3_29','v3_31')
+base=re.sub(r'(?<![0-9])3\.29(?![0-9])','3.31',base)
 base=re.sub(r'<script id="stable-root-url-v\d+">.*?</script>\s*','',base,flags=re.S)
 he=base.lower().find('</head>')
 if he<0: raise SystemExit('head end missing')
@@ -26,43 +34,87 @@ def bounds(s):
     b=s.find('\nasync function showDaoExchangeWindowV288(){',a)
     if a<0 or b<0: raise SystemExit('route boundary missing')
     return a,b
-ba,bb=bounds(base)
-da,db=bounds(donor)
-donor_route=donor[da:db]
-if 'function makeEpisodes()' not in donor_route or 'function validateMulti(' not in donor_route or 'best.multiEpisodes' not in donor_route:
-    raise SystemExit('v3.30 multi-episode engine missing from donor')
 
-# Some cumulative v3.30 builds contain `break outer` while the label itself came from an earlier
-# replacement boundary. Make the copied function self-contained before inserting it into v3.29.
-anchor=donor_route.find(' const targetSkip=Math.max(0,targetShift);')
-ifend=donor_route.find('\n if(!best){',anchor)
-if anchor<0 or ifend<0: raise SystemExit('donor engine anchors missing')
-segment=donor_route[max(0,anchor-80):ifend]
-if 'break outer;' in donor_route and 'outer:{' not in segment:
-    donor_route=donor_route[:anchor]+' outer:{\n'+donor_route[anchor:ifend]+'\n }'+donor_route[ifend:]
+def balanced_block_end(s,start):
+    # start points at ' outer:{'. Count JS braces. Template ${...} and object braces are balanced too.
+    p=s.find('{',start)
+    if p<0: return -1
+    depth=0; quote=None; esc=False; line_comment=False; block_comment=False
+    i=p
+    while i<len(s):
+        c=s[i]; n=s[i+1] if i+1<len(s) else ''
+        if line_comment:
+            if c=='\n': line_comment=False
+            i+=1; continue
+        if block_comment:
+            if c=='*' and n=='/': block_comment=False; i+=2; continue
+            i+=1; continue
+        if quote:
+            if esc: esc=False; i+=1; continue
+            if c=='\\': esc=True; i+=1; continue
+            # For template literals, still count ${...} by temporarily leaving quote until its matching } is hard;
+            # braces inside ${} are balanced in our generated code, so simply ignore literal text braces.
+            if c==quote: quote=None
+            i+=1; continue
+        if c=='/' and n=='/': line_comment=True; i+=2; continue
+        if c=='/' and n=='*': block_comment=True; i+=2; continue
+        if c in ("'",'"','`'): quote=c; i+=1; continue
+        if c=='{': depth+=1
+        elif c=='}':
+            depth-=1
+            if depth==0: return i+1
+        i+=1
+    return -1
 
-prefix=base[:ba]
-suffix=base[bb:]
-out=prefix+donor_route+suffix
+a,b=bounds(base)
+route=base[a:b]
+anchor=route.find(' const targetSkip=Math.max(0,targetShift);')
+start=route.rfind(' outer:{',0,anchor) if anchor>=0 else -1
+if start<0: raise SystemExit('v3.29 outer engine start missing')
+end=balanced_block_end(route,start)
+if end<0: raise SystemExit('v3.29 outer engine end missing')
+old_engine=route[start:end]
+if 'occurrencePlans' not in old_engine: raise SystemExit('unexpected v3.29 engine block')
+route=route[:start]+new_engine+route[end:]
 
+# Insert only the v3.30 multi-episode renderer before the legacy renderer.
+out_anchor=" const lockNames=best.lockRawSlots.length?best.lockRawSlots.map(x=>`#${x.rawNo} ${x.name}`).join(' + '):best.lockIds.map(id=>nm(id)).join(' + ');"
+pos=route.find(out_anchor)
+if pos<0: raise SystemExit('legacy output anchor missing')
+if 'best.multiEpisodes&&best.multiEpisodes.length' not in route:
+    route=route[:pos]+output_insert+route[pos:]
+
+# Route sanity: the old occurrence-tail engine must be gone and the new engine must be self-contained.
+if 'function occurrencePlans(want)' in route: raise SystemExit('old v3.29 engine tail remains')
+for token in ['function makeEpisodes()','function composeRoutes(','function validateMulti(','best.multiEpisodes']:
+    if token not in route: raise SystemExit('new route token missing: '+token)
+
+prefix=base[:a]; suffix=base[b:]
+out=prefix+route+suffix
+
+# Hard guard: outside showDaoPullRouteV290 is byte-for-byte the transformed v3.29 base.
 oa,ob=bounds(out)
 if out[:oa] != prefix or out[ob:] != suffix:
     raise SystemExit('REGRESSION: code outside daomai route function changed')
-base_outside=prefix+suffix
-out_outside=out[:oa]+out[ob:]
 for token in ['FileReader','JSON.parse','localStorage','addEventListener','type="file"','세이브','불러오기']:
-    if base_outside.count(token) != out_outside.count(token):
+    if (prefix+suffix).count(token)!=(out[:oa]+out[ob:]).count(token):
         raise SystemExit('REGRESSION save/load token changed: '+token)
 
 DST.write_text(out,encoding='utf-8')
 Path('latest.json').write_text(json.dumps({'version':'v3.31','file':'Nangman_Integrated_Simulator_v3_31.html'},ensure_ascii=False,indent=2),encoding='utf-8')
-r=Path('README.md')
-s=r.read_text(encoding='utf-8')
-s=re.sub(r'현재 사이트 버전:\s*v?[0-9.]+','현재 사이트 버전: v3.31',s)
-r.write_text(s,encoding='utf-8')
+r=Path('README.md'); s=r.read_text(encoding='utf-8')
+s=re.sub(r'현재 사이트 버전:\s*v?[0-9.]+','현재 사이트 버전: v3.31',s); r.write_text(s,encoding='utf-8')
 if '<title>낭만강호 통합 시뮬레이터 v3.31</title>' not in out[:10000]: raise SystemExit('title mismatch')
-for i,js in enumerate(re.findall(r'<script\b[^>]*>(.*?)</script>',out,re.I|re.S)):
-    p=Path(f'/tmp/v331_app_{i}.js');p.write_text(js,encoding='utf-8')
+
+# REAL JS syntax validation. This intentionally uses \b, not the broken literal \\b regex from older builders.
+scripts=re.findall(r'<script\b[^>]*>(.*?)</script>',out,re.I|re.S)
+if not scripts: raise SystemExit('no scripts found for syntax validation')
+checked=0
+for i,js in enumerate(scripts):
+    if not js.strip(): continue
+    p=Path(f'/tmp/v331_app_{i}.js'); p.write_text(js,encoding='utf-8')
     cp=subprocess.run(['node','--check',str(p)],capture_output=True,text=True)
-    if cp.returncode: raise SystemExit(cp.stderr[:2000])
-print('built v3.31: v3.29 known-good outside route + self-contained v3.30 daomai route; save/load guard passed')
+    if cp.returncode: raise SystemExit(cp.stderr[:3000])
+    checked+=1
+if checked<1: raise SystemExit('no non-empty scripts validated')
+print(f'built v3.31: balanced route-only replacement; save/load outside route preserved; JS scripts checked={checked}')
