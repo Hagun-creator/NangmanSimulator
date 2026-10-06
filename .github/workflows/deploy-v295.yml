@@ -1,23 +1,10 @@
-name: Deploy v2.95
+name: Deploy v2.95 (manual only)
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
-  build-v295:
-    if: github.actor != 'github-actions[bot]'
+  disabled-note:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Build and validate v2.95
-        run: python scripts/build_v295.py
-      - name: Commit v2.95
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Nangman_Integrated_Simulator_v2_95.html latest.json README.md
-          git commit -m "Fix pity baseline and normal-row alignment in v2.95"
-          git push
+      - run: echo "v2.95 auto deployment disabled after release."
