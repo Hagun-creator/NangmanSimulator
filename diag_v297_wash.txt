@@ -1,0 +1,734 @@
+function washOnce => 58122
+
+--- function washOnce ---
+function washOnce(before){
+ const s=dc(before),eng=engineFor(s),q=+s.zizhi,slots=+QUAL[String(q)].slots;
+ const kept=s.talents.filter(t=>t.locked).map(dc),locks=kept.length;if(locks>=slots)throw Error("모든 슬롯 잠금");
+ const cost=COST[slots][locks];let seed=+s.seed,rc=+(s.born_talent_rc||0),luck=+(s.luck_seed||0),linit=!!s.luck_seed_inited;
+ const intl=!!s.international_wash,pityArmed=+s.tal_lucky>=+QUAL[String(q)].base_pity;let pityActive=pityArmed;
+ let talents=kept,seen=new Set(kept.map(t=>+t.id)),purplePage=false,pityTriggered=false,draws=0;
+ const quals={"1":+(s.quality_counts?.["1"]||0),"2":+(s.quality_counts?.["2"]||0),"3":+(s.quality_counts?.["3"]||0),"4":+(s.quality_counts?.["4"]||0)};
+ while(talents.length<slots){
+   let c;if(pityActive){if(!linit){luck=seed;linit=true}[c,luck]=rawPurple(luck,eng)}
+   else{[c,seed]=rawNormal(seed,eng,intl?rc:0);if(intl)rc++}
+   if(++draws>100000)throw Error("wash draw did not converge");
+   if(!eng.allowed.has(c)||seen.has(c))continue;
+   const w=+BYID.get(c).weight;if(w===4&&purplePage)continue;
+   talents.push({id:c,locked:false});seen.add(c);quals[String(w)]++;
+   if(w===4){purplePage=true;pityTriggered=pityActive;pityActive=false}
+ }
+ const washNo=+s.total_wash+1,pills=+s.total_pills+cost,prev=s.last_purple_total_pills;
+ const gap=!purplePage?null:pills-(prev||0),wasFirst=purplePage&&+s.gold_count===0;
+ Object.assign(s,{seed,luck_seed:luck,luck_seed_inited:linit,talents,tal_lucky:purplePage?0:+s.tal_lucky+slots-locks,
+ total_wash:washNo,total_talent_bars:+s.total_talent_bars+slots-locks,total_pills:pills,bag_pills:Math.max(0,+s.bag_pills-cost),
+ gold_count:+s.gold_count+(purplePage?1:0),pity_count:+s.pity_count+(pityTriggered?1:0),quality_counts:quals});
+ if(intl)s.born_talent_rc=rc;if(purplePage)s.last_purple_total_pills=pills;
+ return {state:s,result:{wash_no:washNo,talents:dc(talents),got_gold:purplePage,pills_used:cost,total_pills:pills,was_pity:pityTriggered,
+ pity_armed:pityArmed,tal_lucky:s.tal_lucky,purple_gap_pills:gap,is_first_purple:wasFirst,raw_draws:draws}};
+}
+function scanPurples(base,maxWashes=10000,count=100){
+ let s=dc(base);s.talents=s.talents.map(t=>({...t,locked:false}));const eng=engineFor(s),last=new Map(),out=[];let pities=0;
+ for(const sl of s.talents){const it=BYID.get(+sl.id);if(it)last.set(+it.type,[0,0,it])}
+ for(let z=0;z<maxWashes;z++){
+   const beforeBar=+s.total_talent_bars,step=washOnce(s);s=step.state;
+   const unlocked=step.result.talents.filter(t=>!t.locked);
+   for(let off=0;off<unlocked.length;off++){
+     const it=BYID.get(+unlocked[off].id),type=+it.type,bar=beforeBar+off+1;
+     const earlier=+it.id===251?null:last.get(type);
+     if(+it.weight===4){
+       const priorPurple=!!earlier&&+earlier[2].weight===4,isShen=type===248;
+       let can=false,reason=null;
+       if(+it.id===251){can=false;reason="일심겸용은 동류 충돌맥 없음"}
+       else if(isShen){can=true;reason=earlier?null:"첫 신맥: 이후 신맥 상호충돌 후보"}
+       else if(!earlier){can=false;reason="동류 충돌맥 없음"}
+       else if(priorPurple){can=false;reason="앞선 동류가 자맥뿐"}
+       else can=true;
+       out.push({wash_no:bar,wash_times:+s.total_wash,talent_id:+it.id,talent_name:it.name_ko||it.name,was_pity:!!step.result.was_pity,
+       earlier_conflict_name:earlier?(earlier[2].name_ko||earlier[2].name):null,earlier_conflict_id:earlier?+earlier[2].id:null,
+       earlier_conflict_wash_no:earlier?earlier[0]:null,earlier_conflict_wash_times:earlier?earlier[1]:null,
+       earlier_conflict_gap:earlier?bar-earlier[0]:null,earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+       if(step.result.was_pity)pities++;
+     }
+     last.set(type,[bar,+s.total_wash,it]);
+   }
+   if(out.length>=count)break;
+ }
+ return out;
+}
+
+async function scanPurplesAsync(base,maxWashes=10000,count=100,onProgress=null){
+ const eng=engineFor(base),slots=+QUAL[String(base.zizhi)].slots,basePity=+QUAL[String(base.zizhi)].base_pity;
+ let seed=+base.seed,rc=+(base.born_talent_rc||0),luck=+(base.luck_seed||0),linit=!!base.luck_seed_inited;
+ const intl=!!base.international_wash;
+ let talLucky=+base.tal_lucky,totalWash=0,totalBars=0,out=[],last=new Map();
+ for(const sl of base.talents){const it=BYID.get(+sl.id);if(it)last.set(+it.type,[0,0,it])}
+ for(let z=0;z<maxWashes && out.length<count;z++){
+   totalWash++;
+   let pityActive=talLucky>=basePity,pityTriggered=false,purplePage=false,accepted=0;
+   const seen=new Set();
+   while(accepted<slots){
+     let id;
+     if(pityActive){
+       if(!linit){luck=seed;linit=true}
+       [id,luck]=rawPurple(luck,eng);
+     }else{
+       [id,seed]=rawNormal(seed,eng,intl?rc:0); if(intl)rc++;
+     }
+     if(!eng.allowed.has(id)||seen.has(id))continue;
+     const it=BYID.get(id); if(+it.weight===4&&purplePage)continue;
+     seen.add(id);accepted++;totalBars++;
+     const type=+it.type,earlier=+it.id===251?null:last.get(type);
+     if(+it.weight===4){
+       const priorPurple=!!earlier&&+earlier[2].weight===4,isShen=type===248;
+       let can=false,reason=null;
+       if(+it.id===251){can=false;reason="일심겸용은 동류 충돌맥 없음"}
+       else if(isShen){can=false;reason="신맥 파트너는 전체 첫천장 전 원시 자맥에서 별도 판정"}
+       else if(!earlier){can=false;reason="동류 충돌맥 없음"}
+       else if(priorPurple){can=false;reason="앞선 동류가 자맥뿐"}
+       else can=true;
+       out.push({wash_no:totalBars,wash_times:totalWash,talent_id:+it.id,talent_name:it.name_ko||it.name,
+         was_pity:!!pityActive,earlier_conflict_name:earlier?(earlier[2].name_ko||earlier[2].name):null,
+         earlier_conflict_id:earlier?+earlier[2].id:null,earlier_conflict_wash_no:earlier?earlier[0]:null,
+         earlier_conflict_wash_times:earlier?earlier[1]:null,earlier_conflict_gap:earlier?totalBars-earlier[0]:null,
+         earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+       purplePage=true;pityTriggered=!!pityActive;pityActive=false;
+     }
+     last.set(type,[totalBars,totalWash,it]);
+   }
+   talLucky=purplePage?0:talLucky+slots;
+   if(z%150===149){if(onProgress)onProgress(totalWash,out.length);await new Promise(r=>setTimeout(r,0))}
+ }
+ // 신맥은 '첫 천장 전' 다른 신맥이 실제 원시 자맥에 존재해야 최초 무한교체 가능.
+ const firstPityIdx=out.findIndex(x=>x.was_pity),pre=firstPityIdx<0?out:out.slice(0,firstPityIdx);
+ for(const x of out){
+   if(+BYID.get(x.talent_id)?.type!==248)continue;
+   const partners=pre.filter(y=>y!==x && +BYID.get(y.talent_id)?.type===248 && y.talent_id!==x.talent_id);
+   if(partners.length){
+     partners.sort((a,b)=>Math.abs(a.wash_no-x.wash_no)-Math.abs(b.wash_no-x.wash_no));
+     const p=partners[0];
+     x.can_exchange=!x.was_pity && (firstPityIdx<0 || out.indexOf(x)<firstPityIdx);
+     x.earlier_conflict_name=p.talent_name;
+     x.earlier_conflict_id=p.talent_id;
+     x.earlier_conflict_wash_no=p.wash_no;
+     x.earlier_conflict_wash_times=p.wash_times;
+     x.block_reason=null;
+   }else{
+     x.can_exchange=false;
+     x.earlier_conflict_name=null;x.earlier_conflict_id=null;x.earlier_conflict_wash_no=null;x.earlier_conflict_wash_times=null;
+     x.block_reason="첫 천장 전 다른 신맥 없음";
+   }
+ }
+
+ // 절대 규칙: 첫 천장이 한 번이라도 나온 뒤의 모든 원시 자맥은 신규 무한교체 시작 불가.
+ let pitySeen=false;
+ for(const x of out){
+   x.hasPriorPity=pitySeen;
+   if(pitySeen){
+     x.can_exchange=false;
+     x.block_reason="앞에서 천장 발생 → 이후 무한교체 시작 불가";
+   }
+   if(x.was_pity){
+     x.can_exchange=false;
+     x.block_reason="천장 자맥 → 무한교체 시작 불가";
+     pitySeen=true;
+   }
+ }
+ return out;
+}
+
+function findExchangeCandidates(base,ps=null){
+ ps=ps||scanPurples(base,10000,100);
+ const fixed=!!base.luck_seed_inited,first=ps[0],directPity=!!(first&&first.was_pity&&!fixed),out=[];
+ for(const r of ps){
+   const sh=+BYID.get(r.talent_id)?.type===248;
+   const conflictName=r.earlier_conflict_name||"";
+   const conflictId=r.earlier_conflict_id??null;
+   const conflictBar=+(r.earlier_conflict_wash_no||0),conflictWash=+(r.earlier_conflict_wash_times||0);
+   const avail=!!(r.can_exchange&&conflictName)&&!r.was_pity&&!r.hasPriorPity;
+   out.push({...r,conflictName,conflictId,conflictWashNo:conflictBar,conflictWashTimes:conflictWash,isShenmai:sh,
+     isDirectPity:!!(directPity&&r===first),canInitialize:fixed||avail});
+ }
+ return out;
+}
+function exchangeSequence(luckSeed,state,count=15){
+ const eng=engineFor(state),out=[];let seed=+luckSeed,draws=0;
+ while(out.length<count){let id;[id,seed]=rawPurple(seed,eng);if(++draws>200000)throw Error("purple stream stop");if(eng.allowed.has(id))out.push({id,name:BYID.get(id).name_ko||BYID.get(id).name,seed})}
+ return out;
+}
+function exchangeNRows(base,c,maxN=30,count=15){
+ if(c.canInitialize===false)throw Error("이 자맥은 최초 무한교체를 시작할 수 없음");
+ let s=dc(base);
+ s.talents=s.talents.map(t=>({...t,locked:false}));
+ s.bag_pills=999999999;s.has_bag_pills=true;
+
+ const fixed=!!s.luck_seed_inited;
+ if(fixed){
+   return [{n:0,pills:0,luck:+s.luck_seed,draws:exchangeSequence(+s.luck_seed,s,count)}];
+ }
+ if(c.was_pity||c.hasPriorPity)throw Error("천장 또는 천장 이후 자맥은 신규 무한교체 불가");
+ if(!c.conflictId)throw Error("가장 가까운 충돌맥이 없음");
+
+ const target=+c.talent_id, conflict=+c.con
+const washOnce => -1
+let washOnce => -1
+function rawNormal => 54125
+
+--- function rawNormal ---
+function rawNormal(seed,eng,off=0){return draw(seed,FULL_IDS,FULL_W,eng.c,off)}
+function rawPurple(seed,eng){return draw(seed,PURPLE_IDS,PURPLE_W,eng.c,0)}
+
+
+function applySpecialVars(baseVars,role){
+ const v={...(baseVars||{})};
+ for(const r of SPECIAL_RULES){
+   const on=!!SPECIAL_STATE[r.key];
+   if(r.kind==="var")v[r.var]=on?r.value:0;
+ }
+ // 오온개공은 원본 조건 char_limit=101 + 근골60에 더해 명시 체크가 필요.
+ v.__owon_enabled=!!SPECIAL_STATE.owon;
+ return v;
+}
+function specialAllowedOverride(t,c){
+ // 주인공 전용 특수자질만 별도 제한. 장골주(id 235)는 num_ZhuangGu>=10 조건만 적용되어 동료도 가능.
+ const mainOnlySpecialIds=new Set([401,408,400,278,257,254,252,279]);
+ if(mainOnlySpecialIds.has(+t.id) && +c.roleId!==1)return false;
+ // 오온개공: ID가 명확하지 않아 테이블 조건(char_limit 101 + sx_limit con>=60)을 이용.
+ const L=t.limits||{};
+ const looksOwon=(+L.char_limit===101 && Array.isArray(L.sx_limit) && String(L.sx_limit[0])==="con" && +L.sx_limit[1]>=60);
+ if(looksOwon && !c.vars.__owon_enabled)return false;
+ return true;
+}
+function renderSpecialChecks(){
+ const r=roleObj();
+ if(!SAVE||!r){specialChecks.innerHTML='<div class="small">세이브와 캐릭터를 먼저 선택하세요.</div>';return}
+ const isMain=+r.ID===1;
+ const vars=SAVE.globalVariable||{};
+ let h="";
+ for(const x of SPECIAL_RULES){
+   let checked=false,disabled=false,note="";
+   if(x.kind==="mainCon60"){
+     const con=stat(r,"Con");
+     disabled=!isMain||con<60;
+     checked=!disabled && (SPECIAL_STATE[x.key]??false);
+     note=!isMain?"주인공 전용":(con<60?`근골 ${con} / 60 필요`:`근골 ${con}`);
+   }else{
+     const cur=vars[x.var];
+     disabled=!!x.mainOnly && !isMain;
+     if(SPECIAL_STATE[x.key]===undefined)SPECIAL_STATE[x.key]=(+cur===+x.value);
+     checked=!disabled && !!SPECIAL_STATE[x.key];
+     note=disabled?"주인공 전용":`조건값 ${x.var}=${x.value}${x.note?` · ${x.note}`:""}`;
+   }
+   if(disabled)SPECIAL_STATE[x.key]=false;
+   const zhuangguWarn=x.key==="num_ZhuangGu"?`<br><span class="small">※ 장골주 자질을 원치 않으면 <b>장골주 10개 이상 복용 금지</b></span>`:"";
+   const owonWarn=x.key==="owon"?`<br><span class="small">※ <b>주인공 + 근골 60 이상</b>에서만 등장</span>`:"";
+   h+=`<label style="display:flex;gap:7px;align-items:flex-start;border:1px solid #d5d9de;border-radius:8px;padding:8px">
+     <input type="checkbox" class="specialChk" data-key="${x.key}" ${checked?"checked":""} ${disabled?"disabled":""}>
+     <span><b>${x.label}</b><br><span class="small">${note}</span>${owonWarn}${zhuangguWarn}</span>
+   </label>`;
+ }
+ specialChecks.innerHTML=h;
+ document.querySelectorAll(".specialChk").forEach(el=>el.onchange=()=>{
+   SPECIAL_STATE[el.dataset.key]=el.checked;
+   ENGINE_CACHE.clear(); DAO_V288_CACHE=null;DAO_V296_EXCHANGE_CACHE=null; RAW=[]; CANDS=[]; LAST_CAND_KEY=""; rawBody.innerHTML=""; rawFullBody.innerHTML=""; rawFullSummary.innerHTML=""; candidateSel.innerHTML="";  simRefresh();
+   status.innerHTML='<div class="warn">특수맥 조건이 변경되었습니다. 다시 계산을 눌러주세요.</div>';
+ });
+}
+
+function stateFromSave(save,role,vip=1,zOverride=null){
+ const born=role.BornTalent||{},luck=role.LuckTalent||{};
+ const talents=[];for(const x of recs(role.Talents)){const id=x?.ID??x?.id;if(id!=null&&+id>0)talents.push({id:+id,locked:!!(x.Lock??x.lock)})}
+ const pills=recs(save.Items).filter(x=>x&&+x.ID===2601).reduce((a,x)=>a+(+x.Num||0),0);
+ const st={mode:"seed",zizhi:+(zOverride||role.ZiZhi||153),sex:+(role.Sex||1),vip:+vip,seed:+(born.S||0),
+ luck_seed:+(luck.S||0),luck_seed_inited:luck.S!=null,role_id:+role.ID,salt:+(save.CenterID||278440)%1000000,
+ talents,tal_lucky:+(role.TalLucky||0),total_wash:0,total_talent_bars:0,total_pills:0,bag_pills:pills,has_bag_pills:true,
+ gold_count:0,pity_count:0,quality_counts:{"1":0,"2":0,"3":0,"4":0},last_purple_total_pills:null,exchange_count:0,
+ role_level:+(role.Level||90),role_stats:{str_val:stat(role,"Str"),dex:stat(role,"Dex"),con:stat(role,"Con"),int_val:stat(role,"Int")},
+ global_vars:applySpecialVars(save.globalVariable||{},role)};
+ if(Object.prototype.hasOwnProperty.call(born,"RC")){st.born_talent_rc=+(born.RC||0);st.international_wash=true}
+ return st;
+}
+function washOnce(before){
+ const s=dc(before),eng=engineFor(s),q=+s.zizhi,slots=+QUAL[String(q)].slots;
+ const kept=s.talents.filter(t=>t.locked).map(dc),locks=kept.length;if(locks>=slots)throw Error("모든 슬롯 잠금");
+ const cost=COST[slots][locks];let seed=+s.seed,rc=+(s.born_talent_rc||0),luck=+(s.luck_seed||0),linit=!!s.luck_seed_inited;
+ const intl=!!s.international_wash,pityArmed=+s.tal_lucky>=+QUAL[String(q)].base_pity;let pityActive=pityArmed;
+ let talents=kept,seen=new Set(kept.map(t=>+t.id)),purplePage=false,pityTriggered=false,draws=0;
+ const quals={"1":+(s.quality_counts?.["1"]||0),"2":+(s.quality_counts?.["2"]||0),"3":+(s.quality_counts?.["3"]||0),"4":+(s.quality_counts?.["4"]||0)};
+ while(talents.length<slots){
+   let c;if(pityActive){if(!linit){luck=seed;linit=true}[c,luck]=rawPurple(luck,eng)}
+   else{[c,seed]=rawNormal(seed,eng,intl?rc:0);if(intl)rc++}
+   if(++draws>100000)throw Error("wash draw did not converge");
+   if(!eng.allowed.has(c)||seen.has(c))continue;
+   const w=+BYID.get(c).weight;if(w===4&&purplePage)continue;
+   talents.push({id:c,locked:false});seen.add(c);quals[String(w)]++;
+   if(w===4){purplePage=true;pityTriggered=pityActive;pityActive=false}
+ }
+ const washNo=+s.total_wash+1,pills=+s.total_pills+cost,prev=s.last_purple_total_pills;
+ const gap=!purplePage?null:pills-(prev||0),wasFirst=purplePage&&+s.gold_count===0;
+ Object.assign(s,{seed,luck_seed:luck,luck_seed_inited:linit,talents,tal_lucky:purplePage?0:+s.tal_lucky+slots-locks,
+ total_wash:washNo,total_talent_bars:+s.total_talent_bars+slots-locks,total_pills:pills,bag_pills:Math.max(0,+s.bag_pills-cost),
+ gold_count:+s.gold_count+(purplePage?1:0),pity_count:+s.pity_count+(pityTriggered?1:0),quality_counts:quals});
+ if(intl)s.born_talent_rc=rc;if(purplePage)s.last_purple_total_pills=pills;
+ return {state:s,result:{wash_no:washNo,talents:dc(talents),got_gold:purplePage,pills_used:cost,total_pills:pills,was_pity:pityTriggered,
+ pity_armed:pityArmed,tal_lucky:s.tal_lucky,purple_gap_pills:gap,is_first_purple:wasFirst,raw_draws:draws}};
+}
+function scanPurples(base,maxWashes=10000,count=100){
+ let s=dc(base);s.talents=s.talents.map(t=>({...t,locked:false}));const eng=engineFor(s),last=new Map(),out=[];let pities=0;
+ for(const sl of s.talents){const it=BYID.get(+sl.id);if(it)last.set(+it.type,[0,0,it])}
+ for(let z=0;z<maxWashes;z++){
+   const beforeBar=+s.total_talent_bars,step=washOnce(s);s=step.state;
+   const unlocked=step.result.talents.filter(t=>!t.locked);
+   for(let off=0;off<unlocked.length;off++){
+     const it=BYID.get(+unlocked[off].id),type=+it.type,bar=beforeBar+off+1;
+     const earlier=+it.id===251?null:last.get(type);
+     if(+it.weight===4){
+       const priorPurple=!!earlier&&+earlier[2].weight===4,isShen=type===248;
+       let can=false,reason=null;
+       if(+it.id===251){can=false;reason="일심겸용은 동류 충돌맥 없음"}
+       else if(isShen){can=true;reason=earlier?null:"첫 신맥: 이후 신맥 상호충돌 후보"}
+       else if(!earlier){can=false;reason="동류 충돌맥 없음"}
+       else if(priorPurple){can=false;reason="앞선 동류가 자맥뿐"}
+       else can=true;
+       out.push({wash_no:bar,wash_times:+s.total_wash,talent_id:+it.id,talent_name:it.name_ko||it.name,was_pity:!!step.result.was_pity,
+       earlier_conflict_name:earlier?(earlier[2].name_ko||earlier[2].name):null,earlier_conflict_id:earlier?+earlier[2].id:null,
+       earlier_conflict_wash_no:earlier?earlier[0]:null,earlier_conflict_wash_times:earlier?earlier[1]:null,
+       earlier_conflict_gap:earlier?bar-earlier[0]:null,earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+       if(step.result.was_pity)pities++;
+     }
+     last.set(type,[bar,+s.total_wash,it]);
+   }
+   if(out.length>=count)break;
+ }
+ return out;
+}
+
+async function scanPurplesAsync(base,maxWashes=10000,count=100,onProgress=null){
+ const eng=engineFor(base),slots=+QUAL[String(base.zizhi)].slots,basePity=+QUAL[String(base.zizhi)].base_pity;
+ let seed=+base.seed,rc=+(base.born_talent_rc||0),luck=+(base.luck_seed||0),linit=!!base.luck_seed_inited;
+ const intl=!!base.international_wash;
+ let talLucky=+base.tal_lucky,totalWash=0,totalBars=0,out=[],last=new Map();
+ for(const sl of base.talents){const it=BYID.get(+sl.id);if(it)last.set(+it.type,[0,0,it])}
+ for(let z=0;z<maxWashes && out.length<count;z++){
+   totalWash++;
+   let pityActive=talLucky>=basePity,pityTriggered=false,purplePage=false,accepted=0;
+   const seen=new Set();
+   while(accepted<slots){
+     let id;
+     if(pityActive){
+       if(!linit){luck=seed;linit=true}
+       [id,luck]=rawPurple(luck,eng);
+     }else{
+       [id,seed]=rawNormal(seed,eng,intl?rc:0); if(intl)rc++;
+     }
+     if(!eng.allowed.has(id)||seen.has(id))continue;
+     const it=BYID.get(id); if(+it.weight===4&&purplePage)continue;
+     seen.add(id);accepted++;totalBars++;
+     const type=+it.type,earlier=+it.id===251?null:last.get(type);
+     if(+it.weight===4){
+       const priorPurple=!!earlier&&+earlier[2].weight===4,isShen=type===248;
+       let can=false,reason=null;
+       if(+
+function exchangeSequence => 66250
+
+--- function exchangeSequence ---
+function exchangeSequence(luckSeed,state,count=15){
+ const eng=engineFor(state),out=[];let seed=+luckSeed,draws=0;
+ while(out.length<count){let id;[id,seed]=rawPurple(seed,eng);if(++draws>200000)throw Error("purple stream stop");if(eng.allowed.has(id))out.push({id,name:BYID.get(id).name_ko||BYID.get(id).name,seed})}
+ return out;
+}
+function exchangeNRows(base,c,maxN=30,count=15){
+ if(c.canInitialize===false)throw Error("이 자맥은 최초 무한교체를 시작할 수 없음");
+ let s=dc(base);
+ s.talents=s.talents.map(t=>({...t,locked:false}));
+ s.bag_pills=999999999;s.has_bag_pills=true;
+
+ const fixed=!!s.luck_seed_inited;
+ if(fixed){
+   return [{n:0,pills:0,luck:+s.luck_seed,draws:exchangeSequence(+s.luck_seed,s,count)}];
+ }
+ if(c.was_pity||c.hasPriorPity)throw Error("천장 또는 천장 이후 자맥은 신규 무한교체 불가");
+ if(!c.conflictId)throw Error("가장 가까운 충돌맥이 없음");
+
+ const target=+c.talent_id, conflict=+c.conflictId, conflictWash=+c.conflictWashTimes;
+ if(!conflictWash)throw Error("가장 가까운 충돌맥 회차 정보 없음");
+
+ // A. 원시표에 기록된 가장 가까운 충돌맥 회차까지 무잠금으로 정확히 재현.
+ while(+s.total_wash<conflictWash)s=washOnce(s).state;
+ if(+s.total_wash!==conflictWash)throw Error("충돌맥 회차 재현 실패");
+
+ let ci=s.talents.findIndex(x=>+x.id===conflict);
+ if(ci<0)throw Error(`가장 가까운 충돌맥 ${nm(conflict)}이 원시 회차 ${conflictWash} 페이지에 없음`);
+
+ // B. 그 충돌맥만 즉시 잠금.
+ s.talents=s.talents.map((x,i)=>({...x,locked:i===ci}));
+
+ // C. 그 잠금을 유지한 채 선택한 자맥이 뜰 때까지 세수하고 자맥도 잠금.
+ let ti=s.talents.findIndex(x=>+x.id===target);
+ if(ti<0){
+   let guard=30000;
+   while(guard-->0){
+     s=washOnce(s).state;
+     ci=s.talents.findIndex(x=>+x.id===conflict);
+     if(ci<0)throw Error(`잠근 충돌맥 ${nm(conflict)}이 유지되지 않음`);
+     s.talents[ci].locked=true;
+     ti=s.talents.findIndex(x=>+x.id===target);
+     if(ti>=0)break;
+   }
+   if(ti<0)throw Error(`목표 자맥 ${nm(target)}을 찾지 못함`);
+ }
+ s.talents[ti].locked=true;
+
+ const locked=s.talents.filter(x=>x.locked);
+ const slots=+QUAL[String(s.zizhi)]?.slots||0;
+ if(slots<2)throw Error(`현재 원시 계산 개방 칸은 ${slots}칸입니다. 무한교체/치환은 충돌맥+자맥 2칸이 필요하므로 최소 2칸을 개방하세요.`);
+ if(locked.length!==2||!locked.some(x=>+x.id===conflict)||!locked.some(x=>+x.id===target))
+   throw Error("기준상태가 '충돌맥+자맥 2칸 잠금'이 아님");
+
+ // 이 prepared가 모든 N행의 동일한 기준상태. 원시 계산에서 선택한 슬롯 수를 그대로 사용한다.
+ const prepared=dc(s), basePills=+prepared.total_pills, rows=[];
+
+ let nextPurpleN=null, nextPurpleId=null;
+ const effectiveMaxN=slots===2?0:maxN;
+ for(let n=0;n<=effectiveMaxN;n++){
+   // 중요: 이전 N행에서 이어가지 않는다. 매번 동일 prepared 상태에서 새로 시작.
+   let branch=dc(prepared), invalid=false;
+   for(let k=0;k<n;k++){
+     const beforeIds=new Set(branch.talents.filter(x=>x.locked).map(x=>+x.id));
+     const tr=washOnce(branch);
+     branch=tr.state; // 2잠금 유지, 원시 계산에서 연 나머지 자유칸 전체를 세수
+     const lc=branch.talents.filter(x=>x.locked);
+     if(lc.length!==2||!lc.some(x=>+x.id===conflict)||!lc.some(x=>+x.id===target))
+       throw Error(`N=${n} 진행 중 잠금쌍 유지 실패`);
+
+     // 남은 자유칸에서 새로운 자맥이 뜨는 순간부터 무한교체 N 창 종료.
+     const fresh=branch.talents.find(x=>!x.locked && +BYID.get(+x.id)?.weight===4);
+     if(fresh){
+       invalid=true;
+       nextPurpleId=+fresh.id;
+       nextPurpleN=k+1;
+       break;
+     }
+   }
+   if(invalid)break;
+
+   const luck=+branch.seed;
+   rows.push({
+     n,
+     pills:+branch.total_pills-basePills,
+     luck,
+     draws:exchangeSequence(luck,branch,count),
+     preparedSeed:+prepared.seed,
+     freeSlots:Math.max(0,slots-2),
+     nextPurpleN
+   });
+ }
+ rows.nextPurpleN=nextPurpleN;
+ rows.nextPurpleId=nextPurpleId;
+ rows.openSlots=slots;
+ rows.freeSlots=Math.max(0,slots-2);
+ return rows;
+}
+function nm(id){return koName(id)}
+function qc(id){return "q"+(BYID.get(+id)?.weight||1)}
+
+
+function uiYield(){return new Promise(r=>setTimeout(r,0))}
+class MinHeap{
+ constructor(){this.a=[]}
+ get length(){return this.a.length}
+ push(x){
+   const a=this.a;a.push(x);let i=a.length-1;
+   while(i>0){const p=(i-1)>>1;if(this.cmp(a[p],x)<=0)break;a[i]=a[p];i=p}a[i]=x;
+ }
+ pop(){
+   const a=this.a;if(!a.length)return null;
+   const root=a[0],last=a.pop();if(a.length){
+     let i=0;
+     while(true){
+       let l=i*2+1,r=l+1;if(l>=a.length)break;
+       let c=(r<a.length&&this.cmp(a[r],a[l])<0)?r:l;
+       if(this.cmp(a[c],last)>=0)break;
+       a[i]=a[c];i=c;
+     }
+     a[i]=last;
+   }
+   return root;
+ }
+ cmp(x,y){return x.cost-y.cost||x.serial-y.serial}
+}
+
+function unlockAll(st){
+ const x=dc(st);x.talents=x.talents.map(t=>({...t,locked:false}));return x;
+}
+function heldGoals(st,goalSet){
+ return st.talents.filter(t=>goalSet.has(+t.id)).map(t=>+t.id);
+}
+function lockIds(st,ids){
+ const keep=new Set(ids),x=dc(st);
+ x.talents=x.talents.map(t=>({...t,locked:keep.has(+t.id)}));
+ return x;
+}
+function exchangeConflictsExact(st){
+ const out=Array(st.talents.length).fill(null);
+ for(let i=0;i<st.talents.length;i++){
+   const cur=BYID.get(+st.talents[i].id);if(!cur)continue;
+   for(let j=0;j<st.talents.length;j++){
+     if(i===j)continue;
+     const prev=BYID.get(+st.talents[j].id);
+     if(!prev||+prev.type!==+cur.type)continue;
+     const shen=+cur.type===248&&+cur.weight===4&&+prev.weight===4;
+     if(j>i&&!shen)continue;
+     const possible=shen||(+cur.weight===4&&+prev.weight<4);
+     out[i]={index:i,earlier_index:j,can_exchange:possible};break;
+   }
+ }
+ return out;
+}
+function exchangeOnceExact(before,index){
+ const st=dc(before),conf=exchangeConflictsExact(st),match=index>=0&&index<st.talents.length&&conf[index];
+ if(!match||!match.can_exchange)throw Error("충돌교체 조건 불충족");
+ const removed=+st.talents[index].id;
+ const remaining=st.talents.filter((_,i)=>i!==index).map(x=>({...x}));
+ const existing=new Set(remaining.map(x=>+x.id));
+ let luck=st.luck_seed_inited?+st.luck_seed:+st.seed,rep=null,guard=100000,eng=engineFor(st);
+ while(guard-->0){
+   [rep,luck]=rawPurple(luck,eng);
+   if(eng.allowed.has(rep)&&!existing.has(rep))break;
+ }
+ if(rep==null)throw Error("치환 자맥 추첨 실패");
+ remaining.push({id:+rep,locked:false});
+ st.talents=remaining;st.luck_seed=luck;st.luck_seed_inited=true;st.tal_lucky=0;st.exchange_count=+(st.exchange_count||0)+1;
+ return {state:st,from:removed,to:+rep};
+}
+
+
+function prepareFirstState(base,c){
+ let st=unlockAll(base);st.bag_pills=999999999;st.has_bag_pills=true;
+ const conflict=+c.conflictId,target=+c.talent_id,cw=+c.conflictWashTimes;
+ if(!conflict||cw<0)throw Error("첫 무한교체 충돌맥 정보 없음");
+ while(+st.total_wash<cw)st=washOnce(st).state;
+ let ci=st.talents.findIndex(x=>+x.id===conflict);
+ if(ci<0)throw Error(`첫 충돌맥 ${nm(conflict)} 재현 실패`);
+ st.talents=st.talents.map((x,i)=>({...x,locked:i===ci}));
+ let ti=st.talents.findIndex(x=>+x.id===target),guard=30000;
+ while(ti<0&&guard-->0){
+   st=washOnce(st).state;
+   ci=st.talents.findIndex(x=>+x.id===conflict);if(ci<0)throw Error("첫 충돌맥 잠금 유실");
+   st.talents[ci].locked=true;ti=st.talents.findIndex(x=>+x.id===target);
+ }
+ if(ti<0)throw Error("첫 자맥 재현 실패");
+ st.talents[ti].locked=true;
+ if(st.talents.filter(x=>x.locked).length>=+QUAL[String(st.zizhi)].slots)
+   throw Error("무한교체 N을 돌릴 빈칸이 없음");
+ return st;
+}
+function firstExchangeBranch(base,c,n){
+ let st=prepareFirstState(base,c);
+ for(let i=0;i<n;i++){
+   const tr=washOnce(st);st=tr.state;
+   const fresh=st.talents.find(x=>!x.locked && +BYID.get(+x.id)?.weight===4);
+   if(fresh)throw Error(`N=${i+1}에서 다음 자맥 ${nm(fresh.id)} 등장 → 이 N부터 무한교체 불가`);
+ }
+ const idx=st.talents.findIndex(x=>+x.id===+c.talent_id);
+ const ex=exchangeOnceExact(st,idx);
+ return {state:unlockAll(ex.state),ex,preparedCost:+st.total_pills-(+base.total_pills||0)};
+}
+function stateKeyRoute(st){
+ return [st.zizhi,st.seed,st.born_talent_rc||0,st.luck_seed||0,st.luck_seed_inited?1:0,st.tal_lucky,
+   st.talents.map(x=>+x.id).join(","),st.exchange_count||0].join("|");
+}
+
+let DAO_V288_CACHE=null;
+async function daoFirstPityWindowV288(){
+ if(!SAVE)throw Error('세이브를 먼저 불러오세요.');
+ const r=roleObj();if(!r)throw Error('캐릭터를 선택하세요.');
+ let st=stateFromSave(SAVE,r,+vipSel.value,rawCalcZizhi());
+ st=unlockAll(st);
+ const rows=[];let firstPity=null,nextPurple=null,pityState=null,guard=10000;
+ while(guard-->0 && !nextPurple){
+   const beforeBars=+st.total_talent_bars;
+   const tr=washOnce(st);st=tr.state;
+   const unlocked=tr.result.talents.filter(t=>!t.locked);
+   const page=[];
+   for(let i=0;i<unlocked.length;i++){
+     const id=+unlocked[i].id,it=BYID.get(id);if(!it)continue;
+     const rec={rawNo:beforeBars+i+1,wash:+st.total_wash,id,name:nm(id),weight:+it.weight,type:+it.type};
+     rows.push(rec);page.push(rec);
+   }
+   const purple=page.find(x=>x.weight===4)||null;
+   if(!firstPity){
+     if(tr.result.got_gold && !tr.result.was_pity){
+       throw Error(`첫 원시 자맥이 천장이 아닙니다. 원시 #${purple?.rawNo||'?'} ${purple?.name||''}`.trim());
+     }
+     if(tr.result.was_pity){
+       if(!purple)throw Error('천장 자맥 행을 찾지 못했습니다.');
+       firstPity=purple;pityState=dc(st);
+     }
+   }else if(tr.result.got_gold && purple){
+     nextPurple=purple;
+   }
+   if(st.total_wash%100===0)await uiYield();
+ }
+ if(!firstPity)throw Error('첫 천장을 찾지 못했습니다.');
+ if(!nextPurple)throw Error('첫 천장 이후 다음 원시 자맥을 찾지 못했습니다.');
+ return {rows,firstPity,next
+function stateFromSave => 56997
+
+--- function stateFromSave ---
+function stateFromSave(save,role,vip=1,zOverride=null){
+ const born=role.BornTalent||{},luck=role.LuckTalent||{};
+ const talents=[];for(const x of recs(role.Talents)){const id=x?.ID??x?.id;if(id!=null&&+id>0)talents.push({id:+id,locked:!!(x.Lock??x.lock)})}
+ const pills=recs(save.Items).filter(x=>x&&+x.ID===2601).reduce((a,x)=>a+(+x.Num||0),0);
+ const st={mode:"seed",zizhi:+(zOverride||role.ZiZhi||153),sex:+(role.Sex||1),vip:+vip,seed:+(born.S||0),
+ luck_seed:+(luck.S||0),luck_seed_inited:luck.S!=null,role_id:+role.ID,salt:+(save.CenterID||278440)%1000000,
+ talents,tal_lucky:+(role.TalLucky||0),total_wash:0,total_talent_bars:0,total_pills:0,bag_pills:pills,has_bag_pills:true,
+ gold_count:0,pity_count:0,quality_counts:{"1":0,"2":0,"3":0,"4":0},last_purple_total_pills:null,exchange_count:0,
+ role_level:+(role.Level||90),role_stats:{str_val:stat(role,"Str"),dex:stat(role,"Dex"),con:stat(role,"Con"),int_val:stat(role,"Int")},
+ global_vars:applySpecialVars(save.globalVariable||{},role)};
+ if(Object.prototype.hasOwnProperty.call(born,"RC")){st.born_talent_rc=+(born.RC||0);st.international_wash=true}
+ return st;
+}
+function washOnce(before){
+ const s=dc(before),eng=engineFor(s),q=+s.zizhi,slots=+QUAL[String(q)].slots;
+ const kept=s.talents.filter(t=>t.locked).map(dc),locks=kept.length;if(locks>=slots)throw Error("모든 슬롯 잠금");
+ const cost=COST[slots][locks];let seed=+s.seed,rc=+(s.born_talent_rc||0),luck=+(s.luck_seed||0),linit=!!s.luck_seed_inited;
+ const intl=!!s.international_wash,pityArmed=+s.tal_lucky>=+QUAL[String(q)].base_pity;let pityActive=pityArmed;
+ let talents=kept,seen=new Set(kept.map(t=>+t.id)),purplePage=false,pityTriggered=false,draws=0;
+ const quals={"1":+(s.quality_counts?.["1"]||0),"2":+(s.quality_counts?.["2"]||0),"3":+(s.quality_counts?.["3"]||0),"4":+(s.quality_counts?.["4"]||0)};
+ while(talents.length<slots){
+   let c;if(pityActive){if(!linit){luck=seed;linit=true}[c,luck]=rawPurple(luck,eng)}
+   else{[c,seed]=rawNormal(seed,eng,intl?rc:0);if(intl)rc++}
+   if(++draws>100000)throw Error("wash draw did not converge");
+   if(!eng.allowed.has(c)||seen.has(c))continue;
+   const w=+BYID.get(c).weight;if(w===4&&purplePage)continue;
+   talents.push({id:c,locked:false});seen.add(c);quals[String(w)]++;
+   if(w===4){purplePage=true;pityTriggered=pityActive;pityActive=false}
+ }
+ const washNo=+s.total_wash+1,pills=+s.total_pills+cost,prev=s.last_purple_total_pills;
+ const gap=!purplePage?null:pills-(prev||0),wasFirst=purplePage&&+s.gold_count===0;
+ Object.assign(s,{seed,luck_seed:luck,luck_seed_inited:linit,talents,tal_lucky:purplePage?0:+s.tal_lucky+slots-locks,
+ total_wash:washNo,total_talent_bars:+s.total_talent_bars+slots-locks,total_pills:pills,bag_pills:Math.max(0,+s.bag_pills-cost),
+ gold_count:+s.gold_count+(purplePage?1:0),pity_count:+s.pity_count+(pityTriggered?1:0),quality_counts:quals});
+ if(intl)s.born_talent_rc=rc;if(purplePage)s.last_purple_total_pills=pills;
+ return {state:s,result:{wash_no:washNo,talents:dc(talents),got_gold:purplePage,pills_used:cost,total_pills:pills,was_pity:pityTriggered,
+ pity_armed:pityArmed,tal_lucky:s.tal_lucky,purple_gap_pills:gap,is_first_purple:wasFirst,raw_draws:draws}};
+}
+function scanPurples(base,maxWashes=10000,count=100){
+ let s=dc(base);s.talents=s.talents.map(t=>({...t,locked:false}));const eng=engineFor(s),last=new Map(),out=[];let pities=0;
+ for(const sl of s.talents){const it=BYID.get(+sl.id);if(it)last.set(+it.type,[0,0,it])}
+ for(let z=0;z<maxWashes;z++){
+   const beforeBar=+s.total_talent_bars,step=washOnce(s);s=step.state;
+   const unlocked=step.result.talents.filter(t=>!t.locked);
+   for(let off=0;off<unlocked.length;off++){
+     const it=BYID.get(+unlocked[off].id),type=+it.type,bar=beforeBar+off+1;
+     const earlier=+it.id===251?null:last.get(type);
+     if(+it.weight===4){
+       const priorPurple=!!earlier&&+earlier[2].weight===4,isShen=type===248;
+       let can=false,reason=null;
+       if(+it.id===251){can=false;reason="일심겸용은 동류 충돌맥 없음"}
+       else if(isShen){can=true;reason=earlier?null:"첫 신맥: 이후 신맥 상호충돌 후보"}
+       else if(!earlier){can=false;reason="동류 충돌맥 없음"}
+       else if(priorPurple){can=false;reason="앞선 동류가 자맥뿐"}
+       else can=true;
+       out.push({wash_no:bar,wash_times:+s.total_wash,talent_id:+it.id,talent_name:it.name_ko||it.name,was_pity:!!step.result.was_pity,
+       earlier_conflict_name:earlier?(earlier[2].name_ko||earlier[2].name):null,earlier_conflict_id:earlier?+earlier[2].id:null,
+       earlier_conflict_wash_no:earlier?earlier[0]:null,earlier_conflict_wash_times:earlier?earlier[1]:null,
+       earlier_conflict_gap:earlier?bar-earlier[0]:null,earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+       if(step.result.was_pity)pities++;
+     }
+     last.set(type,[bar,+s.total_wash,it]);
+   }
+   if(out.length>=count)break;
+ }
+ return out;
+}
+
+async function scanPurplesAsync(base,maxWashes=10000,count=100,onProgress=null){
+ const eng=engineFor(base),slots=+QUAL[String(base.zizhi)].slots,basePity=+QUAL[String(base.zizhi)].base_pity;
+ let seed=+base.seed,rc=+(base.born_talent_rc||0),luck=+(base.luck_seed||0),linit=!!base.luck_seed_inited;
+ const intl=!!base.international_wash;
+ let talLucky=+base.tal_lucky,totalWash=0,totalBars=0,out=[],last=new Map();
+ for(const sl of base.talents){const it=BYID.get(+sl.id);if(it)last.set(+it.type,[0,0,it])}
+ for(let z=0;z<maxWashes && out.length<count;z++){
+   totalWash++;
+   let pityActive=talLucky>=basePity,pityTriggered=false,purplePage=false,accepted=0;
+   const seen=new Set();
+   while(accepted<slots){
+     let id;
+     if(pityActive){
+       if(!linit){luck=seed;linit=true}
+       [id,luck]=rawPurple(luck,eng);
+     }else{
+       [id,seed]=rawNormal(seed,eng,intl?rc:0); if(intl)rc++;
+     }
+     if(!eng.allowed.has(id)||seen.has(id))continue;
+     const it=BYID.get(id); if(+it.weight===4&&purplePage)continue;
+     seen.add(id);accepted++;totalBars++;
+     const type=+it.type,earlier=+it.id===251?null:last.get(type);
+     if(+it.weight===4){
+       const priorPurple=!!earlier&&+earlier[2].weight===4,isShen=type===248;
+       let can=false,reason=null;
+       if(+it.id===251){can=false;reason="일심겸용은 동류 충돌맥 없음"}
+       else if(isShen){can=false;reason="신맥 파트너는 전체 첫천장 전 원시 자맥에서 별도 판정"}
+       else if(!earlier){can=false;reason="동류 충돌맥 없음"}
+       else if(priorPurple){can=false;reason="앞선 동류가 자맥뿐"}
+       else can=true;
+       out.push({wash_no:totalBars,wash_times:totalWash,talent_id:+it.id,talent_name:it.name_ko||it.name,
+         was_pity:!!pityActive,earlier_conflict_name:earlier?(earlier[2].name_ko||earlier[2].name):null,
+         earlier_conflict_id:earlier?+earlier[2].id:null,earlier_conflict_wash_no:earlier?earlier[0]:null,
+         earlier_conflict_wash_times:earlier?earlier[1]:null,earlier_conflict_gap:earlier?totalBars-earlier[0]:null,
+         earlier_conflict_is_purple:priorPurple,can_exchange:can,block_reason:reason});
+       purplePage=true;pityTriggered=!!pityActive;pityActive=false;
+     }
+     last.set(type,[totalBars,totalWash,it]);
+   }
+   talLucky=purplePage?0:talLucky+slots;
+   if(z%150===149){if(onProgress)onProgress(totalWash,out.length);await new Promise(r=>setTimeout(r,0))}
+ }
+ // 신맥은 '첫 천장 전' 다른 신맥이 실제 원시 자맥에 존재해야 최초 무한교체 가능.
+ const firstPityIdx=out.findIndex(x=>x.was_pity),pre=firstPityIdx<0?out:out.slice(0,firstPityIdx);
+ for(const x of out){
+   if(+BYID.get(x.talent_id)?.type!==248)continue;
+   const partners=pre.filter(y=>y!==x && +BYID.get(y.talent_id)?.type===248 && y.talent_id!==x.talent_id);
+   if(partners.length){
+     partners.sort((a,b)=>Math.abs(a.wash_no-x.wash_no)-Math.abs(b.wash_no-x.wash_no));
+     const p=partners[0];
+     x.can_exchange=!x.was_pity && (firstPityIdx<0 || out.indexOf(x)<firstPityIdx);
+     x.earlier_conflict_name=p.talent_name;
+     x.earlier_conflict_id=p.talent_id;
+     x.earlier_conflict_wash_no=p.wash_no;
+     x.earlier_conflict_wash_times=p.wash_times;
+     x.block_reason=null;
+   }else{
+     x.can_exchange=false;
+     x.earlier_conflict_name=null;x.earlier_conflict_id=null;x.earlier_conflict_wash_no=null;x.earlier_conflict_wash_times=null;
+     x.block_reason="첫 천장 전 다른 신맥 없음";
+   }
+ }
+
+ // 절대 규칙: 첫 천장이 한 번이라도 나온 뒤의 모든 원시 자맥은 신규 무한교체 시작 불가.
+ let pitySeen=false;
+ for(const x of out){
+   x.hasPriorPity=pitySeen;
+   if(pitySeen){
+     x.can_exchange=false;
+     x.block_reason="앞에서 천장 발생 → 이후 무한교체 시작 불가";
+   }
+   if(x.was_pity){
+     x.can_exchange=false;
+     x.block_reason="천장 자맥 → 무한교체 시작 불가";
+     pitySeen=true;
+   }
+ }
+ return out;
+}
+
+function findExchangeCandidates(base,ps=null){
+ ps=ps||scanPurples(base,10000,100);
+ const fixed=!!base.luck_seed_inited,first=ps[0],directPity=!!(first&&first.was_pity&&!fixed),out=[];
+ for(const r of ps){
+   const sh=+BYID.get(r.talent_id)?.type===248;
+   const conflictName=r.earlier_conflict_name||"";
+   const conflictId=r.earlier_conflict_id??null;
+   const conflictBar=+(r.earlier_conflict_wash_no||0),conflictWash=+(r.earlier_conflict_wash_times||0);
+   const avail=!!(r.can_exchange
