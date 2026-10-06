@@ -1,0 +1,48 @@
+name: Diagnose v2.82 region JS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract JS region logic
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, base64
+          t=Path('Nangman_Integrated_Simulator_v2_82.html').read_text(encoding='utf-8')
+          m=re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;',t)
+          inner=base64.b64decode(m.group(1)).decode('utf-8','replace')
+          # only script bodies
+          scripts='\n'.join(re.findall(r'<script[^>]*>(.*?)</script>', inner, flags=re.I|re.S))
+          lines=scripts.splitlines()
+          pats=['명중','region','route','place','npc','bonus','equip-auto-region','auto-region','searchPen','regionbonus','area','extra','attr','accuracy','hit']
+          hit=set()
+          for i,line in enumerate(lines):
+              lo=line.lower()
+              if any(p.lower() in lo for p in pats):
+                  for j in range(max(0,i-6),min(len(lines),i+7)): hit.add(j)
+          out=[]
+          prev=-2
+          for j in sorted(hit):
+              if j!=prev+1: out.append(f'\n--- around script line {j+1} ---')
+              out.append(f'{j+1}: {lines[j]}')
+              prev=j
+          Path('diagnostics_region_js_v282.txt').write_text('\n'.join(out)[:300000],encoding='utf-8')
+          PY
+      - name: Commit diagnostics
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diagnostics_region_js_v282.txt
+          git commit -m "Add v2.82 region JS diagnostics" || exit 0
+          git push
