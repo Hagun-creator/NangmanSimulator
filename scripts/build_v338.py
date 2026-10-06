@@ -1,6 +1,7 @@
 from pathlib import Path
 import re, subprocess, json
 
+# v3.38 trigger: remove the remaining top-summary drop label only.
 SRC=Path('Nangman_Integrated_Simulator_v3_37.html')
 DST=Path('Nangman_Integrated_Simulator_v3_38.html')
 if not SRC.exists(): raise SystemExit('v3.37 source missing')
@@ -17,8 +18,6 @@ old='세수 · 캐릭터 상태 · 장비 제작/정련/촉련/특수부가·망
 new='세수 · 캐릭터 상태 · 장비 제작/정련/촉련/특수부가·망정/검왕각 · 세이브 데이터 준비 전'
 if old not in text: raise SystemExit('target summary text missing')
 text=text.replace(old,new)
-
-# Also catch identical summary if spacing around the drop token differs slightly.
 text=re.sub(r'(세수\s*·\s*캐릭터 상태\s*·\s*장비 제작/정련/촉련/특수부가·망정/검왕각)\s*·\s*드랍\s*·\s*(세이브 데이터 준비 전)',r'\1 · \2',text)
 
 if old in text: raise SystemExit('drop token remains in top summary')
