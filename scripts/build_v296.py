@@ -29,10 +29,10 @@ new_raw=r'''async function showDaoRawBeforeV288(){
 }'''
 text=text[:a]+new_raw+text[b:]
 
-# 2) Post-pity exchange table cache. Reuse instantly while save/character/VIP/special conditions are unchanged.
-anchor='let DAO_V290_WINDOW=null;'
-if anchor not in text: raise SystemExit('DAO_V290_WINDOW anchor missing')
-text=text.replace(anchor,anchor+"\nlet DAO_V296_EXCHANGE_CACHE=null;",1)
+# 2) Post-pity exchange table cache. Insert before the known v2.95 route helpers.
+anchor='function daoDeleteCandidatesV295(d){'
+if anchor not in text: raise SystemExit('daoDeleteCandidatesV295 anchor missing')
+text=text.replace(anchor,'let DAO_V296_EXCHANGE_CACHE=null;\n'+anchor,1)
 
 # 3) Replace the post-pity table generator.
 #    Visible raw names/order come from daoFirstPityWindowV288(), which already uses washOnce().
@@ -90,7 +90,6 @@ async function showDaoExchangeWindowV288(){
    if(guard<=0)throw Error('천장 이후 실제 원시 흐름 재현 한도를 초과했습니다.');
 
    // If the pity page itself had trailing normal rows, do not invent branch seeds for them.
-   // They remain visible as actual washOnce rows, with exchange cells explicitly unavailable.
    const samePityWash=actual.slice(1).filter(x=>+x.wash===+d.firstPity.wash);
    if(samePityWash.length){
      rows.splice(1,0,...samePityWash.map(x=>({rawNo:x.rawNo,wash:x.wash,id:x.id,name:x.name,kind:'원시',seed:null,draws:[],samePityWash:true})));
@@ -127,15 +126,11 @@ async function showDaoExchangeWindowV288(){
 '''
 text=text[:a]+new_exchange+text[b:]
 
-# 4) Cache invalidation must follow the existing daomai/save-condition invalidation paths.
-text=text.replace('DAO_V288_CACHE=null;', 'DAO_V288_CACHE=null;DAO_V296_EXCHANGE_CACHE=null;')
+# 4) Cache invalidation must follow the existing daomai/save-condition invalidation paths,
+#    but never touch the original let declaration.
+text=re.sub(r'(?<!let )DAO_V288_CACHE=null;', 'DAO_V288_CACHE=null;DAO_V296_EXCHANGE_CACHE=null;', text)
 
-# 5) Keep the v2.95 baseline-pity exchange cells visible if an older renderer fragment survived elsewhere.
-old="""if(r.kind==='천장'){\n       h+=`<tr><td class=\"num\">${r.rawNo}</td><td class=\"num\">${r.wash}</td><td>기본 천장</td><td class=\"q4\"><b>${r.name}</b><div class=\"small\">조작 없음 · 클릭 불가</div></td>`;\n       for(let i=0;i<15;i++)h+=`<td class=\"muted\">-</td>`;\n     }else{"""
-new="""if(r.kind==='천장'){\n       h+=`<tr><td class=\"num\">${r.rawNo}</td><td class=\"num\">${r.wash}</td><td>기본 천장</td><td class=\"q4\"><b>${r.name}</b><div class=\"small\">조작 없음 · 클릭 불가</div></td>`;\n       for(let i=0;i<15;i++){const n=r.draws[i]?.name||'-';h+=`<td class=\"q4\">${n}</td>`;}\n     }else{"""
-text=text.replace(old,new)
-
-# 6) Version bump only. Equipment behavior is untouched.
+# 5) Version bump only. Equipment behavior is untouched.
 text=text.replace('v2.95','v2.96').replace('v2_95','v2_96')
 text=re.sub(r'(?<![0-9])2\.95(?![0-9])','2.96',text)
 text=re.sub(r'<script id="stable-root-url-v295">.*?</script>\s*','',text,flags=re.S)
@@ -160,10 +155,9 @@ r=Path('README.md');s=r.read_text(encoding='utf-8');s=re.sub(r'현재 사이트 
 for x in [
     "sharedSaveText = await file.text()","JSON.parse(sharedSaveText)",
     'daoRawBeforeBtn.onclick=showDaoRawBeforeV288','dao-pull-v295','daoDeleteCandidatesV295',
-    'DAO_V296_EXCHANGE_CACHE','washOnce() 실제 원시 흐름','border-top:3px solid currentColor',
-    "Path('index.html').write_text(text,encoding='utf-8')"
+    'DAO_V296_EXCHANGE_CACHE','washOnce() 실제 원시 흐름','border-top:3px solid currentColor'
 ]:
-    if x not in text and x != "Path('index.html').write_text(text,encoding='utf-8')": raise SystemExit('regression '+x)
+    if x not in text: raise SystemExit('regression '+x)
 if DST.read_text(encoding='utf-8')!=Path('index.html').read_text(encoding='utf-8'):
     raise SystemExit('index/versioned mismatch')
 if '<title>낭만강호 통합 시뮬레이터 v2.96</title>' not in text[:10000]: raise SystemExit('title mismatch')
