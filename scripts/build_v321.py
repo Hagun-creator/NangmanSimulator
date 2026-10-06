@@ -13,6 +13,7 @@ if he<0: raise SystemExit('head end missing')
 text=text[:he]+'''<script id="stable-root-url-v321">try{if(/Nangman_Integrated_Simulator_v3_21\\.html/i.test(location.pathname)){history.replaceState(null,'','/NangmanSimulator/');}}catch(e){}</script>\n'''+text[he:]
 
 # Range UI: raw #600 through the first 6 ACTUAL normal raws after first pity.
+text=re.sub(r'(<button id="daoExchangeWindowBtn">).*?(</button>)',r'\1 2. 원시 #600~천장 이후 6개 교체맥 보기\2',text,count=1)
 text=text.replace('2. 원시 #700~천장 직전 교체맥 보기','2. 원시 #600~천장 이후 6개 교체맥 보기')
 text=text.replace('원시 #700부터 천장 직전 일반맥까지','원시 #600부터 천장 이후 일반 원시맥 6개까지')
 text=text.replace('원시 #700~천장 직전 교체맥 표','원시 #600~천장 이후 6개 교체맥 표')
@@ -182,8 +183,8 @@ for x in [
  '2. 원시 #600~천장 이후 6개 교체맥 보기','const minRaw=600;','slice(0,6)',
  'pityBeforeState','washOnce() 실제 흐름으로 검증된 일반 원시맥 6개','postCandidates.length!==6',
  'for(let i=0;i<15;i++)h+=`<td class="q4">${r.draws[i]?.name||\'-\'}</td>`;',
- 'class="linkBtn dao-pull-v295"','잡맥법 최소 세수단 경로','renderDaoSearchProgressV320',
- 'readCurrentPillBalanceV320','현재 검색 <b>#${info.searchNo.toLocaleString()}</b>'
+ 'class="linkBtn dao-pull-v295"','잡맥법 최소 세수단 경로','daoCurrentPillsValue',
+ '현재 검색 <b>#${directChecked}</b>','누적 잠금 검사'
 ]:
  if x not in text: raise SystemExit('v3.21 guard missing: '+x)
 
