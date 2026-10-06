@@ -1,0 +1,24 @@
+name: Deploy v3.14
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  build-v314:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build and validate v3.14
+        run: python scripts/build_v314_minroute.py
+      - name: Commit v3.14
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nangman_Integrated_Simulator_v3_14.html latest.json README.md
+          git commit -m "Use exact minimum-cost daomai seed routing in v3.14" || exit 0
+          git pull --rebase origin main
+          git push
