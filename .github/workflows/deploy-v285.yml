@@ -1,4 +1,4 @@
-name: Deploy v2.85 with permanent guards
+name: Deploy v2.85
 on:
   push:
     branches: [main]
@@ -12,74 +12,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build v2.85
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re,base64
-          src=Path('Nangman_Integrated_Simulator_v2_84.html')
-          if not src.exists(): raise SystemExit('v2.84 source missing')
-          text=src.read_text(encoding='utf-8')
-          m=re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;',text)
-          if not m: raise SystemExit('equipment payload missing')
-          inner=base64.b64decode(m.group(1)).decode('utf-8','replace')
-
-          # Remove the literal newline artifacts that were rendered on screen.
-          for bad in ['\\n \\n','\\n\\n','/n /n','/n/n']:
-              inner=inner.replace(bad,'')
-              text=text.replace(bad,'')
-
-          # Search-detail back: rebuild list, then scroll the OUTER document to the results block.
-          start=inner.find('function showDetailTop233(')
-          end=inner.find('\nfunction paintDetail(',start)
-          if start<0 or end<0: raise SystemExit('detail navigation function missing')
-          new_fn="""function showDetailTop233(obj,backView,initialTab){R.sel=obj;R.detailBack233=backView||R.view;R.detailTab=initialTab||'xl';const m=q('#rmain');m.innerHTML=`<button type=\"button\" class=\"back218\" id=\"dback233\">← 이전 목록</button><div id=\"dtop233\"></div>`;q('#dback233').onclick=()=>{const back=R.detailBack233||'find';open(back);if(back==='find'&&R.results.length){requestAnimationFrame(()=>requestAnimationFrame(()=>{const rr=q('#rresults');if(!rr)return;const y=rr.getBoundingClientRect().top+window.scrollY;try{if(window.parent&&window.parent!==window&&window.frameElement){const fy=window.frameElement.getBoundingClientRect().top+window.parent.scrollY;window.parent.scrollTo(0,Math.max(0,fy+y-12))}else window.scrollTo(0,Math.max(0,y-12))}catch(_){rr.scrollIntoView({block:'start'})}}))}};paintDetail(q('#dtop233'),obj);window.scrollTo(0,0)}"""
-          inner=inner[:start]+new_fn+inner[end:]
-
-          # Version bump in both outer and embedded UI, including labels without v prefix.
-          for a,b in [('v2.84','v2.85'),('v2_84','v2_85')]:
-              text=text.replace(a,b);inner=inner.replace(a,b)
-          text=re.sub(r'(?<![0-9])2\.84(?![0-9])','2.85',text)
-          inner=re.sub(r'(?<![0-9])2\.84(?![0-9])','2.85',inner)
-          text=text.replace('id="v284-mobile-integrated"','id="v285-mobile-integrated"')
-          inner=inner.replace('id="v284-mobile-equipment"','id="v285-mobile-equipment"')
-
-          enc=base64.b64encode(inner.encode('utf-8')).decode('ascii')
-          text=text[:m.start()]+f'const EQUIPMENT_HTML_B64="{enc}";'+text[m.end():]
-          Path('Nangman_Integrated_Simulator_v2_85.html').write_text(text,encoding='utf-8')
-          Path('index.html').write_text(text,encoding='utf-8')
-
-          r=Path('README.md')
-          s=r.read_text(encoding='utf-8') if r.exists() else '# NangmanSimulator\n'
-          s=re.sub(r'현재 사이트 버전:\s*v?[0-9.]+','현재 사이트 버전: v2.85',s)
-          if '현재 사이트 버전:' not in s:s+='\n현재 사이트 버전: v2.85\n'
-          r.write_text(s,encoding='utf-8')
-
-          # Release guard kept in repo for every future version.
-          Path('scripts').mkdir(exist_ok=True)
-          Path('scripts/validate_release.py').write_text(r'''from pathlib import Path
-import re,sys,base64
-ver=sys.argv[1]
-fn='Nangman_Integrated_Simulator_'+ver.replace('.','_')+'.html'
-for p in [Path(fn),Path('index.html')]:
-    t=p.read_text(encoding='utf-8')
-    if f'<title>낭만강호 통합 시뮬레이터 {ver}</title>' not in t[:7000]:raise SystemExit('title mismatch: '+str(p))
-    m=re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;',t)
-    if m:
-        inn=base64.b64decode(m.group(1)).decode('utf-8','replace')
-        if "window.parent.scrollTo" not in inn or "q('#rresults')" not in inn:raise SystemExit('search result return guard missing')
-        for bad in ['\\n \\n','\\n\\n','/n /n','/n/n']:
-            if bad in inn:raise SystemExit('visible newline artifact remains: '+repr(bad))
-rr=Path('README.md').read_text(encoding='utf-8')
-if f'현재 사이트 버전: {ver}' not in rr:raise SystemExit('README mismatch')
-print('release validation OK',ver)
-''',encoding='utf-8')
-
-          # Deterministic assertions for this build.
-          if '<title>낭만강호 통합 시뮬레이터 v2.85</title>' not in text[:7000]: raise SystemExit('title not v2.85')
-          if "window.parent.scrollTo" not in inner or "q('#rresults')" not in inner: raise SystemExit('search result return patch missing')
-          if any(b in inner for b in ['\\n \\n','\\n\\n','/n /n','/n/n']): raise SystemExit('newline artifact remains')
-          PY
+      - name: Build and validate v2.85
+        run: python scripts/build_v285.py
       - name: Commit v2.85
         run: |
           git config user.name "github-actions[bot]"
