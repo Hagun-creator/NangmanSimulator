@@ -1,0 +1,71 @@
+name: Deploy v2.83 region cache fix
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-v283:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build v2.83 from v2.82
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re, base64
+
+          src=Path('Nangman_Integrated_Simulator_v2_82.html')
+          dst=Path('Nangman_Integrated_Simulator_v2_83.html')
+          if not src.exists(): raise SystemExit('v2.82 source missing')
+          text=src.read_text(encoding='utf-8')
+          m=re.search(r'const\s+EQUIPMENT_HTML_B64\s*=\s*"([A-Za-z0-9+/=]+)"\s*;',text)
+          if not m: raise SystemExit('embedded equipment payload missing')
+          inner=base64.b64decode(m.group(1)).decode('utf-8')
+
+          old_xl="const ck=`MAX269|${e.id}|${e.CZSeed}|${R.bud.mud}|${searchReqSig263(r,'xl')}`;"
+          new_xl="const ck=`MAX269|${e.id}|${e.CZSeed}|${R.bud.mud}|REG:${JSON.stringify(e._make_region||[])}|${searchReqSig263(r,'xl')}`;"
+          old_mj="const info=rkMjLevelInfo273(e),ck=`${e.id}|${e.MJSeed}|${R.bud.mj}|${info.fromLv}>${info.toLv}|${searchReqSig263(r,'mj')}`;"
+          new_mj="const info=rkMjLevelInfo273(e),ck=`${e.id}|${e.MJSeed}|${R.bud.mj}|REG:${JSON.stringify(e._make_region||[])}|${info.fromLv}>${info.toLv}|${searchReqSig263(r,'mj')}`;"
+          if inner.count(old_xl)!=1: raise SystemExit(f'xilian cache key match count={inner.count(old_xl)}')
+          if inner.count(old_mj)!=1: raise SystemExit(f'mang cache key match count={inner.count(old_mj)}')
+          inner=inner.replace(old_xl,new_xl,1).replace(old_mj,new_mj,1)
+
+          # Guardrails: source region data must remain distinct, and cache keys must include region state.
+          if '"40800":{"id":40800' not in inner or '"tx":[["hit",110,15]' not in inner:
+              raise SystemExit('검왕각 region source data missing')
+          if '"30200":{"id":30200' not in inner or '"tx":[["atk_add",20,7]' not in inner:
+              raise SystemExit('남양도 region source data missing')
+          if new_xl not in inner or new_mj not in inner:
+              raise SystemExit('region-aware cache patch missing')
+
+          enc=base64.b64encode(inner.encode('utf-8')).decode('ascii')
+          text=text[:m.start()]+f'const EQUIPMENT_HTML_B64="{enc}";'+text[m.end():]
+          text=text.replace('v2.82','v2.83').replace('v2_82','v2_83')
+          text=text.replace('id="v282-mobile-integrated"','id="v283-mobile-integrated"')
+          text=text.replace('id="v282-mobile-equipment"','id="v283-mobile-equipment"')
+          if '<title>낭만강호 통합 시뮬레이터 v2.83</title>' not in text[:5000]:
+              raise SystemExit('v2.83 title missing')
+
+          dst.write_text(text,encoding='utf-8')
+          Path('index.html').write_text(text,encoding='utf-8')
+          readme=Path('README.md')
+          if readme.exists():
+              s=readme.read_text(encoding='utf-8')
+              s=re.sub(r'현재 사이트 버전:\s*v[0-9.]+','현재 사이트 버전: v2.83',s)
+              readme.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit v2.83
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Nangman_Integrated_Simulator_v2_83.html index.html README.md
+          git commit -m "Fix region-aware equipment search cache in v2.83"
+          git push
