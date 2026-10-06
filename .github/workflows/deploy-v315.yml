@@ -13,12 +13,12 @@ jobs:
         with:
           fetch-depth: 0
       - name: Build and validate v3.30
-        run: python scripts/build_v330.py
+        run: python scripts/build_v330b.py
       - name: Commit v3.30
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_v330.py Nangman_Integrated_Simulator_v3_30.html latest.json README.md
+          git add scripts/build_v330.py scripts/build_v330b.py Nangman_Integrated_Simulator_v3_30.html latest.json README.md
           git commit -m "Use multi-episode daomai kamek engine in v3.30" || exit 0
           git pull --rebase origin main
           git push
