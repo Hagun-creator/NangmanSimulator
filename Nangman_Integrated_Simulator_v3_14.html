@@ -347,6 +347,13 @@ main{max-width:1800px!important;width:100%!important;box-sizing:border-box!impor
 </style>
 <script id="stable-root-url-v303">try{if(/Nangman_Integrated_Simulator_v3_14\.html/i.test(location.pathname)){history.replaceState(null,'','/NangmanSimulator/');}}catch(e){}</script>
 <script id="stable-root-url-v314">try{if(/Nangman_Integrated_Simulator_v3_14\.html/i.test(location.pathname)){history.replaceState(null,'','/NangmanSimulator/');}}catch(e){}</script>
+
+<style id="dao-default-pity-v314">
+#daoExchangeWindowResult tr.dao-default-pity>td{background:#fff3b0!important;border-top:3px solid #8a5a00!important;border-bottom:3px solid #8a5a00!important;font-weight:800}
+#daoExchangeWindowResult tr.dao-default-pity>td:first-child{border-left:3px solid #8a5a00!important}
+#daoExchangeWindowResult tr.dao-default-pity>td:last-child{border-right:3px solid #8a5a00!important}
+.dao-default-pity-badge{display:inline-block;margin-left:6px;padding:3px 8px;border-radius:999px;background:#8a5a00;color:#fff;font-size:11px;font-weight:800}
+</style>
 </head>
 <body>
 <main>
@@ -1149,140 +1156,1672 @@ function daoDeleteCandidatesV295(d){
 async function showDaoPullRouteV290(targetName,sourceRaw,sourceName,sourceCol){
  const box=document.getElementById('daoPullRouteV290');if(!box)return;
  const d=DAO_V290_WINDOW;if(!d){box.innerHTML='<div class="warn">먼저 자맥 구간별 교체맥 표를 계산하세요.</div>';return}
- const rr=DAO_V290_ROUTE_ROWS.find(x=>+x.rawNo===+sourceRaw&&x.name===sourceName)||DAO_V290_ROUTE_ROWS.find(x=>+x.rawNo===+sourceRaw);
- if(!rr){box.innerHTML='<div class="warn">선택한 원시맥 행을 찾지 못했습니다.</div>';return}
- if(rr.zone==='pre'){
-   box.innerHTML=`<div class="warn"><b>#${sourceRaw} ${sourceName}</b>은 현재 천장보다 이전 seed 참고행입니다. 잡맥 생략은 RNG를 앞으로 소비하므로 이 seed로 되돌아갈 수 없습니다.</div>`;return;
- }
- if(rr.zone==='pity'){
-   box.innerHTML=`<div class="good"><b>최소루트</b> · 추가 조작 없음 · 필요 생략 0개</div><div class="small" style="line-height:1.8;margin-top:6px">천장 <b>${rr.pityName}</b> · 교체 1 <b>${rr.firstDraw||'-'}</b></div>`;return;
- }
- const need=+rr.needSkip||0;
- box.innerHTML=`<div class="warn"><b>목표 seed 최소비용 경로 탐색 중...</b><br>목표: 생략 ${need}개 위치 · 천장 ${rr.pityName} · 교체 1 ${rr.firstDraw||'-'}</div>`;
+ const row=DAO_V290_ROUTE_ROWS.find(x=>+x.rawNo===+sourceRaw);
+ if(!row){box.innerHTML='<div class="warn">선택한 원시맥 행을 찾지 못했습니다.</div>';return}
+ if(!SAVE||!roleObj()){box.innerHTML='<div class="warn">세이브와 캐릭터를 먼저 선택하세요.</div>';return}
+ const targetSeed=+(row.luckStart??row.seedAfter??0);
+ if(!targetSeed){box.innerHTML='<div class="warn">선택 행의 목표 seed를 찾지 못했습니다.</div>';return}
+
+ let base=unlockAll(stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi()));
+ base.bag_pills=999999999;base.has_bag_pills=true;
+ const slots=+QUAL[String(base.zizhi)]?.slots||0;
+ if(slots<=0){box.innerHTML='<div class="warn">열린 슬롯이 없습니다.</div>';return}
+
+ box.innerHTML=`<div class="warn"><b>${sourceName}</b> 목표 seed <b>${targetSeed}</b> 최소 세수단 경로 탐색 중...<br><span class="small">실제 washOnce 상태만 탐색하며 목표 Born seed에 정확히 도달하면 성공합니다.</span></div>`;
  await uiYield();
 
- const root=unlockAll(stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi()));
- root.bag_pills=999999999;root.has_bag_pills=true;
- const slots=+QUAL[String(root.zizhi)]?.slots||0;
- if(slots<=0){box.innerHTML='<div class="warn">열린 슬롯 수를 찾지 못했습니다.</div>';return}
- const basePills=+root.total_pills||0;
- const pityAt=+QUAL[String(root.zizhi)]?.base_pity||0;
-
- function stateKey(s){
-   const ids=(s.talents||[]).map(t=>+t.id).sort((a,b)=>a-b).join(',');
-   return [+s.seed||0,+s.luck_seed||0,+s.tal_lucky||0,+s.born_talent_rc||0,ids].join('|');
+ function normalize(st){const x=dc(st);x.talents=(x.talents||[]).map(t=>({...t,locked:false}));return x}
+ function stateKey(st){
+   return [st.seed,st.born_talent_rc||0,st.luck_seed||0,st.luck_seed_inited?1:0,st.tal_lucky,
+     (st.talents||[]).map(t=>+t.id).join(','),st.gold_count||0,st.pity_count||0].join('|');
  }
- function subsets(s){
-   const a=(s.talents||[]).filter(t=>+BYID.get(+t.id)?.weight<4).map(t=>+t.id);
-   const out=[[]],n=a.length;
-   for(let mask=1;mask<(1<<n);mask++){
-     const x=[];for(let i=0;i<n;i++)if(mask&(1<<i))x.push(a[i]);
-     if(x.length<slots)out.push(x);
+ function lockSets(n){
+   const out=[[]],max=(1<<n)-1;
+   for(let m=1;m<=max;m++){
+     const a=[];for(let i=0;i<n;i++)if(m&(1<<i))a.push(i);
+     if(a.length<slots)out.push(a);
    }
    return out;
  }
- function purpleId(tr){
-   const p=(tr.result?.talents||[]).find(t=>+BYID.get(+t.id)?.weight===4);return p?+p.id:0;
- }
- function routeLabel(ids){return ids.length?ids.map(id=>nm(id)).join(' + '):'잠금 없음'}
- function nextNormals(st,count=2){
-   let s=unlockAll(dc(st)),out=[],g=80;
-   while(out.length<count&&g-->0){
-     const before=+s.total_talent_bars||0,tr=washOnce(s);s=tr.state;
-     const arr=(tr.result?.talents||[]).filter(t=>!t.locked);
-     for(let i=0;i<arr.length&&out.length<count;i++){
-       const it=BYID.get(+arr[i].id);if(!it||+it.weight===4)continue;
-       out.push({rawNo:before+i+1,id:+arr[i].id,name:nm(+arr[i].id)});
-     }
-   }
-   return out;
+ function heapPush(h,x){h.push(x);let i=h.length-1;while(i){const p=(i-1)>>1;if(h[p].cost<=x.cost)break;h[i]=h[p];i=p}h[i]=x}
+ function heapPop(h){if(!h.length)return null;const r=h[0],x=h.pop();if(h.length){let i=0;while(1){let l=i*2+1;if(l>=h.length)break;let rr=l+1,c=rr<h.length&&h[rr].cost<h[l].cost?rr:l;if(h[c].cost>=x.cost)break;h[i]=h[c];i=c}h[i]=x}return r}
+ function pityName(st){const t=(st.talents||[]).find(t=>+BYID.get(+t.id)?.weight===4);return t?nm(t.id):''}
+ function goal(before,after,tr){
+   return !!tr.result.was_pity && +before.seed===targetSeed;
  }
 
- const heap=new MinHeap(),seen=new Map();let serial=0,expanded=0,best=null;
- heap.push({cost:0,serial:serial++,st:dc(root),path:[]});
- seen.set(stateKey(root),0);
- const MAX_EXPAND=120000,MAX_EXTRA_WASH=420;
- const rootWash=+root.total_wash||0;
- while(heap.length&&expanded<MAX_EXPAND){
-   const cur=heap.pop();expanded++;
-   if(cur.cost!==seen.get(stateKey(cur.st)))continue;
-   if((+cur.st.total_wash||0)-rootWash>MAX_EXTRA_WASH)continue;
-   for(const lockIdsNow of subsets(cur.st)){
-     let prepared=dc(cur.st);const keep=new Set(lockIdsNow);
-     prepared.talents=prepared.talents.map(t=>({...t,locked:keep.has(+t.id)}));
-     let tr;try{tr=washOnce(prepared)}catch(e){continue}
-     const ns=tr.state,stepCost=+(tr.result?.pills_used||0),nc=cur.cost+stepCost;
-     const action={wash:+ns.total_wash,locks:[...lockIdsNow],lockNames:routeLabel(lockIdsNow),cost:stepCost,total:nc,
-       result:(tr.result?.talents||[]).map(t=>({id:+t.id,name:nm(+t.id),locked:!!t.locked})),gotGold:!!tr.result?.got_gold};
-     if(tr.result?.got_gold){
-       const pid=purpleId(tr),draws=exchangeSequence(+ns.luck_seed,ns,15),first=+(draws[0]?.id||0);
-       if(+ns.luck_seed===+rr.targetLuckAfterPity && pid===+rr.pityId && first===+rr.firstDrawId){
-         best={cost:nc,state:ns,path:cur.path.concat([action]),draws,pid};break;
+ const pages=[];
+ let scan=normalize(base),scanGuard=3000;
+ while(scanGuard-->0){
+   const tr=washOnce(scan);scan=normalize(tr.state);
+   if(tr.result.got_gold)break;
+   pages.push(dc(scan));
+ }
+ if(scanGuard<=0){box.innerHTML='<div class="warn">기본 천장 이전 상태 재현 한도를 초과했습니다.</div>';return}
+
+ let best=null,checked=0;
+ const MAX_NEAR_PAGES=Math.min(120,pages.length),maxHold=24;
+ // Check closest-to-pity pages first; stop after the first distance band that has a valid seed route.
+ for(let dist=0;dist<MAX_NEAR_PAGES;dist++){
+   const pg=pages[pages.length-1-dist];if(!pg)break;
+   let bandBest=null;
+   const n=Math.min(slots,(pg.talents||[]).length);
+   const sets=lockSets(n).filter(x=>x.length>0);
+   for(const idxs of sets){
+     let st=dc(pg),cost=0,path=[];
+     st.talents=st.talents.map((t,i)=>({...t,locked:idxs.includes(i)}));
+     if(st.talents.filter(t=>t.locked).length>=slots)continue;
+     for(let hold=1;hold<=maxHold;hold++){
+       let tr;const before=dc(st);
+       try{tr=washOnce(before)}catch(e){break}
+       st=tr.state;cost+=+tr.result.pills_used||0;checked++;
+       const step={locks:idxs.map(i=>({id:+before.talents[i].id,name:nm(before.talents[i].id)})),pills:+tr.result.pills_used||0,beforeSeed:+before.seed,afterSeed:+st.seed,talents:(tr.result.talents||[]).map(t=>nm(t.id)),wasPity:!!tr.result.was_pity};
+       path.push(step);
+       if(goal(before,st,tr)){
+         const cand={cost,st:dc(st),path:dc(path),checked,dist};
+         if(!bandBest||cand.cost<bandBest.cost)bandBest=cand;
+         break;
        }
-       continue;
+       if(tr.result.got_gold)break;
+       const ids=new Set(idxs.map(i=>+pg.talents[i].id));
+       st.talents=st.talents.map(t=>({...t,locked:ids.has(+t.id)}));
      }
-     const k=stateKey(ns),old=seen.get(k);
-     if(old!=null&&old<=nc)continue;
-     seen.set(k,nc);heap.push({cost:nc,serial:serial++,st:ns,path:cur.path.concat([action])});
    }
-   if(best)break;
-   if(expanded%2500===0){box.innerHTML=`<div class="warn">최소비용 경로 탐색 중 · 상태 ${expanded.toLocaleString()}개 · 현재 비용 ${cur.cost.toLocaleString()}단</div>`;await uiYield()}
+   if(bandBest){best=bandBest;break}
+   if(dist%8===7){box.innerHTML=`<div class="warn">천장 가까운 순서로 탐색 중 · ${dist+1}/${MAX_NEAR_PAGES}회차 범위 · 후보 ${checked.toLocaleString()}개</div>`;await uiYield();}
  }
 
  if(!best){
-   box.innerHTML=`<div class="warn"><b>목표 seed 최소루트를 찾지 못했습니다.</b><br>실제 washOnce 상태 ${expanded.toLocaleString()}개를 비용순으로 탐색했습니다. 잘못된 근사 루트는 표시하지 않습니다.</div>`;return;
+   box.innerHTML=`<div class="warn"><b>${sourceName}</b> 목표 seed ${targetSeed}에 대해 천장에 가까운 ${MAX_NEAR_PAGES}개 회차에서 실제 후보 ${checked.toLocaleString()}개를 검사했지만 목표 seed 경로를 찾지 못했습니다.</div>`;
+   return;
  }
- const compact=[];
- for(const a of best.path){
-   const prev=compact[compact.length-1];
-   const key=a.locks.slice().sort((x,y)=>x-y).join(',');
-   if(prev&&prev.key===key){prev.count++;prev.cost+=a.cost;prev.endWash=a.wash;prev.last=a}else compact.push({key,locks:a.locks,lockNames:a.lockNames,count:1,cost:a.cost,startWash:a.wash,endWash:a.wash,last:a});
- }
- let h=`<div class="good"><b>최소 세수단 루트</b> · 총 <b>${best.cost.toLocaleString()}단</b> · 목표 생략 위치 ${need}개 · 탐색 상태 ${expanded.toLocaleString()}개</div>`+
-   `<div class="small" style="line-height:1.8;margin-top:6px">목표 천장: <b>${rr.pityName}</b> · 목표 교체 1: <b>${rr.firstDraw||'-'}</b><br>`+
-   `실제 도달 luck_seed: <b>${best.state.luck_seed}</b> = 목표 seed <b>${rr.targetLuckAfterPity}</b></div>`;
- h+='<div class="card" style="padding:10px;margin-top:8px"><b>실행 순서</b><ol style="margin:7px 0 0 20px;padding:0">';
- for(const x of compact){
-   const range=x.startWash===x.endWash?`${x.startWash}회차`:`${x.startWash}~${x.endWash}회차`;
-   const vals=x.last.result.map(t=>`${t.locked?'[잠금] ':''}${t.name}`).join(' · ');
-   h+=`<li style="margin:7px 0"><b>${range}</b>: ${x.lockNames} · ${x.count}회 세수 · ${x.cost}단<br><span class="small">마지막 결과: ${vals}</span></li>`;
+
+ const parts=[];let freeRun=0,freePills=0;
+ function flushFree(){if(freeRun){parts.push({free:true,count:freeRun,pills:freePills});freeRun=0;freePills=0}}
+ for(const s of best.path){if(!s.locks.length&&!s.wasPity){freeRun++;freePills+=s.pills;continue}flushFree();parts.push(s)}flushFree();
+ let h=`<div class="good"><b>목표 seed 도달 최소비용 경로</b> · 목표 seed <b>${targetSeed}</b> · 총 소모 <b>${best.cost.toLocaleString()}단</b></div>`+
+ `<div class="small" style="line-height:1.7;margin:6px 0">성공 조건: 천장 발생 직전 Born seed = ${targetSeed}<br>검사 후보: ${best.checked.toLocaleString()}개 · 천장에서 ${best.dist}회차 앞 후보군</div>`;
+ h+='<div class="card" style="padding:10px"><b>실행 순서</b><ol style="margin:7px 0 0 20px;padding:0">';
+ for(const p of parts){
+   if(p.free){h+=`<li>잠금 없이 <b>${p.count}회</b> 세수 · ${p.pills}단</li>`;continue}
+   const lk=p.locks.length?p.locks.map(x=>x.name).join(' + '):'잠금 없음';
+   h+=`<li><b>${lk}</b> 상태로 1회 세수 · ${p.pills}단 · Born ${p.beforeSeed} → ${p.afterSeed}${p.wasPity?' · <b>천장 발생 / seed 검증 성공</b>':''}<br><span class="small">결과: ${p.talents.join(' · ')}</span></li>`;
  }
  h+='</ol></div>';
- const after=nextNormals(best.state,2).map(x=>`#${x.rawNo} ${x.name}`).join(' · ')||'-';
- h+=`<div class="good" style="margin-top:8px">검증 완료 · 실제 천장 <b>${nm(best.pid)}</b> · 교체 1 <b>${best.draws[0]?.name||'-'}</b> · 이후 일반맥 <b>${after}</b></div>`;
  box.innerHTML=h;
 }
 async function showDaoExchangeWindowV288(){
- const rawOut=document.getElementById('daoRawBeforeResult'),out=document.getElementById('daoExchangeWindowResult');if(!out)return;
- if(rawOut)rawOut.innerHTML='';
- out.innerHTML='<div class="warn">정확한 천장/교체 seed 표 계산 중...</div>';
+ const daoRawBeforeResult=document.getElementById('daoRawBeforeResult');
+ const daoExchangeWindowResult=document.getElementById('daoExchangeWindowResult');
+ if(!daoExchangeWindowResult){console.error('daoExchangeWindowResult not found');return;}
+ if(daoRawBeforeResult)daoRawBeforeResult.innerHTML='';
+ daoExchangeWindowResult.innerHTML='<div class="warn">첫 천장 직전 6개 + 첫 천장 이후 다음 원시 자맥 직전까지 교체맥 15개 계산 중...</div>';
  try{
    const d=await daoWindowCachedV288();DAO_V290_WINDOW=d;
-   const base=stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi()),eng=engineFor(base),slots=+QUAL[String(base.zizhi)]?.slots||0;
-   function pityPack(normalSeed,state){
-     const pe=engineFor(state);let luck=+normalSeed,g=100000,pid=0;
-     while(g-->0){let id;[id,luck]=rawPurple(luck,pe);if(!pe.allowed.has(id))continue;pid=+id;break}
-     if(!pid)throw Error('천장 자맥 계산 실패');
-     const draws=exchangeSequence(+luck,state,15);
-     return {pityId:pid,pityName:nm(pid),targetLuckAfterPity:+luck,draws,firstDraw:draws[0]?.name||'',firstDrawId:+(draws[0]?.id||0)};
-   }
-   let seed=+base.seed,rc=+(base.born_talent_rc||0),intl=!!base.international_wash,talLucky=+base.tal_lucky||0,rawNo=0,washNo=0,guard=200000,preAll=[];
+   const base=stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi());
+   const slots=+QUAL[String(base.zizhi)]?.slots||0;
    const pityAt=+QUAL[String(base.zizhi)]?.base_pity||0;
-   while(talLucky<pityAt&&guard-->0){washNo++;const seen=new Set();let accepted=0;while(accepted<slots&&guard-->0){let id;[id,seed]=rawNormal(seed,eng,intl?rc:0);if(intl)rc++;if(!eng.allowed.has(id)||seen.has(id))continue;const it=BYID.get(id);if(!it)continue;seen.add(id);accepted++;rawNo++;if(+it.weight===4)throw Error(`첫 천장 전 자연 자맥 ${nm(id)} 등장`);preAll.push({rawNo,wash:washNo,id,name:nm(id),normalSeed:+seed})}talLucky+=slots}
-   const rows=[];for(const r of preAll.slice(-6)){const p=pityPack(r.normalSeed,base);rows.push({...r,...p,kind:'천장 전 참고',zone:'pre',needSkip:null})}
-   const currentDraws=exchangeSequence(+d.pityState.luck_seed,d.pityState,15);
-   rows.push({rawNo:+d.firstPity.rawNo,wash:+d.firstPity.wash,id:+d.firstPity.id,name:d.firstPity.name,kind:'현재 천장',zone:'pity',needSkip:0,pityId:+d.firstPity.id,pityName:d.firstPity.name,targetLuckAfterPity:+d.pityState.luck_seed,draws:currentDraws,firstDraw:currentDraws[0]?.name||'',firstDrawId:+(currentDraws[0]?.id||0)});
-   const bs=dc(d.pityState),pe=engineFor(bs);let pseed=+bs.seed,prc=+(bs.born_talent_rc||0),pintl=!!bs.international_wash,praw=+d.firstPity.rawNo,pwash=+bs.total_wash,skip=0,stop=null;guard=200000;
-   while(guard-->0&&!stop){pwash++;const seen=new Set();let accepted=0;while(accepted<slots&&guard-->0){let id;[id,pseed]=rawNormal(pseed,pe,pintl?prc:0);if(pintl)prc++;if(!pe.allowed.has(id)||seen.has(id))continue;const it=BYID.get(id);if(!it)continue;seen.add(id);accepted++;praw++;if(+it.weight===4){stop={rawNo:praw,name:nm(id)};break}skip++;const branch=dc(bs);branch.seed=+pseed;if(pintl)branch.born_talent_rc=+prc;const p=pityPack(+pseed,branch);rows.push({rawNo:praw,wash:pwash,id,name:nm(id),normalSeed:+pseed,kind:'천장 이후',zone:'post',needSkip:skip,...p})}}
-   if(!stop)throw Error('다음 원시 자맥을 찾지 못했습니다.');
-   DAO_V290_ROUTE_ROWS=rows.map(x=>({...x}));
-   let h=`<div class="good"><b>정확한 seed 기준 교체맥 표</b><br><span class="small">현재 천장=생략 0. 천장 바로 다음 일반맥=1개, 두 번째=2개 순서입니다. 클릭하면 숫자만 보여주는 것이 아니라 <b>그 seed로 실제 도달하는 최소 세수단 루트</b>를 탐색합니다. 다음 자맥 <b>#${stop.rawNo} ${stop.name}</b>은 경계입니다.</span></div>`;
-   h+='<div class="scroll"><table><thead><tr><th>원시 #</th><th>구간</th><th>seed 위치</th><th>기준 일반맥</th><th>천장 후보</th>';for(let i=1;i<=15;i++)h+=`<th>교체 ${i}</th>`;h+='</tr></thead><tbody>';
-   for(const r of rows){const ns=r.zone==='pre'?'이동 불가':String(r.needSkip??0);h+=`<tr><td class="num">${r.rawNo}</td><td>${r.kind}</td><td class="num">${ns}</td><td><button type="button" class="linkBtn dao-pull-v295" data-raw="${r.rawNo}" data-source="${encodeURIComponent(r.name)}"><b>${r.name}</b></button></td><td class="q4"><b>${r.pityName}</b></td>`;for(let i=0;i<15;i++)h+=`<td class="q4">${r.draws[i]?.name||'-'}</td>`;h+='</tr>'}
-   h+='</tbody></table></div><div id="daoPullRouteV290" class="card" style="margin-top:8px"><div class="small">원시맥 클릭 → 목표 seed와 정확히 일치하는 최소 세수단 경로 탐색.</div></div>';out.innerHTML=h;
-   out.onclick=async(ev)=>{const btn=ev.target.closest?.('.dao-pull-v295');if(!btn)return;ev.preventDefault();const raw=Number(btn.dataset.raw||0),source=decodeURIComponent(btn.dataset.source||'');const r=DAO_V290_ROUTE_ROWS.find(x=>+x.rawNo===raw&&x.name===source)||DAO_V290_ROUTE_ROWS.find(x=>+x.rawNo===raw);await showDaoPullRouteV290(r?.firstDraw||'',raw,source,1)};
- }catch(e){out.innerHTML=`<div class="warn">교체맥 계산 오류: ${String(e&&e.message||e)}</div>`}
+   if(slots<=0)throw Error('원시 자맥 탭에서 계산용 칸을 1칸 이상 개방하세요.');
+   if(!pityAt)throw Error('현재 개방 칸에는 천장 기준이 없습니다.');
+
+   const eng=engineFor(base);
+   let seed=+base.seed,rc=+(base.born_talent_rc||0),intl=!!base.international_wash;
+   let talLucky=+base.tal_lucky||0,rawNo=0,washNo=0,guard=200000;
+   const candidates=[];
+   const minRaw=0;
+
+   // Pre-pity normal stream: identical semantics to the older #600+ daomai table.
+   while(talLucky<pityAt&&guard-->0){
+     washNo++;
+     const seen=new Set();
+     let accepted=0;
+     while(accepted<slots&&guard-->0){
+       let id;
+       [id,seed]=rawNormal(seed,eng,intl?rc:0);
+       if(intl)rc++;
+       if(!eng.allowed.has(id)||seen.has(id))continue;
+       const it=BYID.get(id);if(!it)continue;
+       if(+it.weight===4)throw Error(`원시 #${rawNo+1}에서 자연 자맥 ${nm(id)}이 천장보다 먼저 나옵니다. 첫 자맥=천장 도맥법 분기 대상이 아닙니다.`);
+       seen.add(id);accepted++;rawNo++;
+       if(rawNo>=minRaw)candidates.push({rawNo,wash:washNo,id,name:nm(id),seedAfter:+seed,rcAfter:+rc});
+     }
+     talLucky+=slots;
+     if(washNo%80===0)await uiYield();
+   }
+   if(guard<=0)throw Error('첫 천장 직전 흐름 계산 한도를 초과했습니다.');
+
+   const pre=d.rows.filter(x=>x.rawNo<d.firstPity.rawNo&&x.weight<4);
+   const currentPrev=pre[pre.length-1]||null;
+   if(!currentPrev)throw Error('현재 천장 직전 일반 자질을 찾지 못했습니다.');
+   const allPre=candidates.filter(x=>+x.rawNo<=+currentPrev.rawNo).sort((a,b)=>a.rawNo-b.rawNo);
+   const usablePre=allPre.slice(-6).map(x=>({...x,segment:'pre'}));
+   if(!usablePre.length)throw Error('첫 천장 직전 후보 일반맥이 없습니다.');
+
+   // After the first pity, continue the ordinary raw stream only until the NEXT natural purple.
+   // These are real exchange-table rows, not a fixed-size validation tail.
+   const post=[];
+   let postSeed=+seed,postRc=+rc,postRaw=+currentPrev.rawNo,postWash=washNo,nextNaturalPurple=null;
+   postLoop: while(guard-->0){
+     postWash++;
+     const seenPost=new Set();let acceptedPost=0;
+     while(acceptedPost<slots&&guard-->0){
+       let id;[id,postSeed]=rawNormal(postSeed,eng,intl?postRc:0);if(intl)postRc++;
+       if(!eng.allowed.has(id)||seenPost.has(id))continue;
+       const it=BYID.get(id);if(!it)continue;
+       seenPost.add(id);acceptedPost++;postRaw++;
+       if(+it.weight===4){
+         nextNaturalPurple={rawNo:postRaw,wash:postWash,id,name:nm(id),seedAfter:+postSeed,rcAfter:+postRc};
+         break postLoop;
+       }
+       post.push({rawNo:postRaw,wash:postWash,id,name:nm(id),seedAfter:+postSeed,rcAfter:+postRc,postPity:true,segment:'post'});
+     }
+   }
+   if(!nextNaturalPurple)throw Error('첫 천장 이후 다음 원시 자맥을 찾지 못했습니다.');
+   const postEndRaw=post.length?+post[post.length-1].rawNo:+currentPrev.rawNo;
+   for(const x of post)x.segmentEndRaw=postEndRaw;
+   for(const x of usablePre)x.segmentEndRaw=+currentPrev.rawNo;
+   const usable=[...usablePre,...post];
+
+   function purpleFromSeed(startSeed,count){
+     let luck=+startSeed,out=[],spins=0;
+     while(out.length<count&&spins++<200000){
+       let id;[id,luck]=rawPurple(luck,eng);
+       if(!eng.allowed.has(id))continue;
+       out.push({id,name:nm(id),seedAfter:+luck});
+     }
+     return {rows:out,lastSeed:+luck};
+   }
+
+   const rows=[];
+   for(let i=0;i<usable.length;i++){
+     const c=usable[i];
+     const p=purpleFromSeed(c.seedAfter,16); // 천장 자맥 1 + 교체 15
+     if(p.rows.length<1)continue;
+     rows.push({...c,kind:'원시',pity:p.rows[0],draws:p.rows.slice(1,16),luckStart:+c.seedAfter});
+     if(i%120===119)await uiYield();
+   }
+   if(!rows.length)throw Error('표시 가능한 천장/교체맥 결과가 없습니다.');
+
+   const routeRows=rows.map(r=>({
+     ...r,
+     firstDraw:r.pity?.name||'',
+     postPity:!!r.postPity,
+     segment:r.segment|| (r.postPity?'post':'pre'),
+     segmentEndRaw:+(r.segmentEndRaw??currentPrev.rawNo),
+     shift:Math.max(0,+(r.segmentEndRaw??currentPrev.rawNo)-(+r.rawNo)),
+     nextPurpleName:r.postPity?(nextNaturalPurple?.name||''):d.firstPity.name,
+     nextPurpleRaw:r.postPity?(nextNaturalPurple?.rawNo||0):d.firstPity.rawNo
+   }));
+
+   let h=`<div class="good"><b>첫 천장 직전 6개 + 다음 원시 자맥 직전까지 교체맥 표</b><br>`+
+     `<span class="small">각 행은 해당 원시맥 직후 seed를 기준으로 계산합니다. <b>천장 자맥</b>과 그 뒤 <b>교체 1~15</b>를 표시하며, 원시맥 버튼을 누르면 교체맥 15개는 그대로 표시하며, 최소루트는 원시맥 클릭 시 천장에 가까운 중복부터 순차 재구성합니다.</span></div>`;
+   h+='<div class="scroll"><table><thead><tr><th>원시 #</th><th>세수 회차</th><th>원시맥</th><th>천장 자맥</th>';
+   for(let i=1;i<=15;i++)h+=`<th>교체 ${i}</th>`;
+   h+='</tr></thead><tbody>';
+   for(const r of rows){
+     const rr=routeRows.find(x=>+x.rawNo===+r.rawNo);
+     h+=`<tr class="${+r.rawNo===+d.firstPity.rawNo?'dao-default-pity':''}"><td class="num">${r.rawNo}</td><td class="num">${r.wash}</td>`+
+       `<td><button type="button" class="linkBtn dao-pull-v295" data-raw="${r.rawNo}" data-source="${encodeURIComponent(r.name)}"><b>${r.name}</b>${+r.rawNo===+d.firstPity.rawNo?'<span class="dao-default-pity-badge">기본 천장 · 0 이동</span>':''}</button></td>`+
+       `<td class="q4"><b>${r.pity?.name||'-'}</b></td>`;
+     for(let i=0;i<15;i++)h+=`<td class="q4">${r.draws[i]?.name||'-'}</td>`;
+     h+='</tr>';
+   }
+   h+='</tbody></table></div>';
+   h+='<div class="small" style="margin-top:7px">같은 이름의 일반맥도 원시 위치가 다르면 seed가 달라질 수 있으므로 원시 #별로 별도 계산합니다.</div>';
+   h+='<section id="daoPullRouteBoxV298" class="card" style="margin-top:14px;padding:12px">'+
+      '<div style="font-weight:800;margin-bottom:8px">잡맥법 최소 세수단 경로</div>'+
+      '<div id="daoPullRouteV290" class="small">위 표에서 원하는 <b>원시맥</b>을 누르면 그 원시맥을 눌렀을 때만 천장에 가까운 중복부터 최소소모 루트를 계산합니다.</div>'+
+      '</section>';
+   const pack={window:d,routeRows,html:h};
+   DAO_V290_WINDOW=pack.window;
+   DAO_V290_ROUTE_ROWS=(pack.routeRows||[]).map(x=>({...x,draws:(x.draws||[]).map(y=>({...y}))}));
+   daoExchangeWindowResult.innerHTML=pack.html;
+   daoExchangeWindowResult.onclick=(ev)=>{
+     const btn=ev.target.closest?.('.dao-pull-v295');
+     if(!btn)return;
+     ev.preventDefault();
+     const source=decodeURIComponent(btn.dataset.source||'');
+     const raw=Number(btn.dataset.raw||0);
+     const row=DAO_V290_ROUTE_ROWS.find(x=>+x.rawNo===raw);
+     showDaoPullRouteV290(row?.firstDraw||'',raw,source,1);
+   };
+ }catch(e){daoExchangeWindowResult.innerHTML=`<div class="warn">${e.message||e}</div>`}
 }
+
+async function analyzeFirstPityDaomai(){
+ if(!SAVE){daoFirstResult.innerHTML='<div class="warn">세이브를 먼저 불러오세요.</div>';return}
+ const base=stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi());
+ const slots=+QUAL[String(base.zizhi)]?.slots||0;
+ if(slots<=0){daoFirstResult.innerHTML='<div class="warn">원시 자맥 탭에서 계산용 칸을 1칸 이상 개방하세요.</div>';return}
+ const pityAt=+QUAL[String(base.zizhi)]?.base_pity||0;
+ if(!pityAt){daoFirstResult.innerHTML='<div class="warn">현재 개방 칸에는 천장 기준이 없습니다.</div>';return}
+
+ daoFirstResult.innerHTML='<div class="warn">원시 #600 이후 천장 직전 일반맥별 seed → 교체맥 15개 계산 중...</div>';
+ await uiYield();
+
+ // v22.16: 도맥 제거 경로를 후보마다 다시 세수하지 않는다.
+ // 천장 직전으로 당겨질 수 있는 일반맥의 핵심 값은 그 일반맥이 채택된 직후의 BornTalent seed다.
+ // 한 번의 원시 normal stream 스캔으로 #600 이후 후보와 seed를 모은 뒤,
+ // 각 seed에서 천장 자맥 1개를 뽑고 그 뒤 Luck/교체 자맥 15개를 바로 계산한다.
+ const eng=engineFor(base);
+ let seed=+base.seed, rc=+(base.born_talent_rc||0), intl=!!base.international_wash;
+ let talLucky=+base.tal_lucky||0, rawNo=0, washNo=0;
+ const candidates=[];
+ const minRaw=600;
+ const maxGuard=200000;
+ let guard=maxGuard;
+
+ // 잠금 없는 계산용 원시 흐름. 한 페이지 내 중복만 삼킨다.
+ while(talLucky<pityAt && guard-->0){
+   washNo++;
+   const seen=new Set();
+   let accepted=0;
+   while(accepted<slots && guard-->0){
+     let id;
+     [id,seed]=rawNormal(seed,eng,intl?rc:0);
+     if(intl)rc++;
+     if(!eng.allowed.has(id)||seen.has(id))continue;
+     const it=BYID.get(id);
+     if(!it)continue;
+     // 첫 자맥=천장 분기만 다루므로 자연 자맥이 먼저 나오면 이 도맥표 대상이 아니다.
+     if(+it.weight===4){
+       daoFirstResult.innerHTML=`<div class="warn">원시 #${rawNo+1}에서 자연 자맥 <b>${nm(id)}</b>이 천장보다 먼저 나옵니다. 첫 자맥=천장 도맥법 분기 대상이 아닙니다.</div>`;
+       return;
+     }
+     seen.add(id); accepted++; rawNo++;
+     if(rawNo>=minRaw){
+       candidates.push({rawNo,washNo,id,name:nm(id),seedAfter:+seed,rcAfter:+rc});
+     }
+   }
+   talLucky+=slots;
+   if(washNo%80===0)await uiYield();
+ }
+ if(guard<=0){daoFirstResult.innerHTML='<div class="bad">원시 흐름 스캔 한도를 초과했습니다.</div>';return}
+ if(!candidates.length){daoFirstResult.innerHTML='<div class="warn">원시 #700 이후 천장 직전 후보 일반맥이 없습니다.</div>';return}
+
+ // 후보 일반맥 직후 seed가 바로 다음 천장 삽입의 Luck seed 시작점이라고 보고,
+ // 그 seed에서 허용되는 첫 자맥을 천장 자맥으로, 이후 15개를 교체맥으로 뽑는다.
+ function purpleFromSeed(startSeed,count){
+   let luck=+startSeed, out=[], spins=0;
+   while(out.length<count && spins++<200000){
+     let id;[id,luck]=rawPurple(luck,eng);
+     if(!eng.allowed.has(id))continue;
+     out.push({id,name:nm(id),seedAfter:+luck});
+   }
+   return {rows:out,lastSeed:+luck};
+ }
+
+ const rows=[];
+ for(let i=0;i<candidates.length;i++){
+   const c=candidates[i];
+   const p=purpleFromSeed(c.seedAfter,16); // 1개 천장 + 뒤 15개 교체
+   if(!p.rows.length)continue;
+   rows.push({
+     ...c,
+     pity:p.rows[0],
+     seq:p.rows.slice(1,16),
+     luckStart:+c.seedAfter
+   });
+   if(i%120===119)await uiYield();
+ }
+
+ let h=`<div class="good"><b>천장 도맥 seed 표 · 원시 #600 이후</b><br>
+ <span class="small">계산용 열린 칸 <b>${slots}칸</b> · 천장 기준 ${pityAt}. 도맥법으로 중복 일반맥을 제거해 천장 직전 일반맥을 바꾸면, 그 일반맥 직후의 <b>BornTalent seed</b>가 달라지고 그 seed에서 천장 자맥과 이후 교체맥 서열이 달라집니다. 후보별 전체 도맥 경로 재시뮬레이션은 하지 않아 속도를 줄였습니다.</span></div>`;
+ h+='<div class="scroll"><table><thead><tr><th>직전 원시 #</th><th>천장 직전 일반 자질</th><th>직전 seed</th><th>천장 자맥</th>';
+ for(let i=1;i<=15;i++)h+=`<th>교체 ${i}</th>`;
+ h+='</tr></thead><tbody>';
+ for(const r of rows){
+   h+=`<tr><td class="num">${r.rawNo}</td><td>${r.name}</td><td class="num">${r.luckStart}</td><td class="q4">${r.pity.name}</td>`;
+   for(let i=0;i<15;i++)h+=`<td class="q4">${r.seq[i]?.name||'-'}</td>`;
+   h+='</tr>';
+ }
+ h+='</tbody></table></div>';
+ h+=`<div class="small">표는 #600부터 기본 천장 직전까지의 일반맥을 후보로 봅니다. 같은 이름의 일반 자질이라도 원시 위치가 다르면 seed가 다를 수 있으므로 원시 #별로 따로 표시합니다.</div>`;
+ daoFirstResult.innerHTML=h;
+}
+
+async function analyzePityShift(){
+ if(!SAVE){pityResult.innerHTML='<div class="warn">세이브를 먼저 불러오세요.</div>';return}
+ pityResult.innerHTML='<div class="warn">첫 천장과 1종 카맥 후보 분석 중...</div>';
+ await uiYield();
+ const base=stateFromSave(SAVE,roleObj(),+vipSel.value),slots=+QUAL[String(base.zizhi)].slots;
+ let st=unlockAll(base),eng=engineFor(st),occ=new Map(),firstPity=null,history=[];
+ for(let w=1;w<=1200;w++){
+   st=washOnce(st).state;history.push(dc(st));
+   const generated=st.talents.filter(t=>!t.locked);
+   for(const t of generated){
+     const it=BYID.get(+t.id);if(!it||+it.weight===4)continue;
+     if(!occ.has(+t.id))occ.set(+t.id,[]);
+     occ.get(+t.id).push({w,state:dc(st)});
+   }
+   if(st.pity_count>(base.pity_count||0)){firstPity={w,state:dc(st)};break}
+   if(w%100===0)await uiYield();
+ }
+ if(!firstPity){pityResult.innerHTML='<div class="warn">1200회 안에 첫 천장이 없습니다.</div>';return}
+ const basePurple=firstPity.state.talents.find(t=>+BYID.get(+t.id)?.weight===4);
+ let rows=[];
+ const candidates=[...occ.entries()].filter(([id,a])=>a.length>=2).sort((a,b)=>b[1].length-a[1].length).slice(0,16);
+ for(const [id,arr] of candidates){
+   const first=arr[0];
+   let x=dc(first.state);
+   x=lockIds(x,new Set([+id]));
+   let result=null;
+   for(let k=0;k<1200;k++){
+     x=washOnce(x).state;
+     if(x.pity_count>(base.pity_count||0)){
+       const p=x.talents.find(t=>+BYID.get(+t.id)?.weight===4);
+       result={w:+x.total_wash,id:p?+p.id:0,bars:+x.total_talent_bars};break;
+     }
+   }
+   if(result)rows.push({lock:+id,count:arr.length,pity:result.id,w:result.w,bars:result.bars});
+   await uiYield();
+ }
+ let h=`<div class="good">기본 첫 천장: ${basePurple?nm(basePurple.id):"-"} · 세수 ${firstPity.w}회</div>`;
+ h+='<div class="scroll"><table><thead><tr><th>잠글 맥</th><th>천장 전 반복횟수</th><th>변경 천장</th><th>세수회차</th><th>원시누적</th></tr></thead><tbody>';
+ for(const r of rows)h+=`<tr><td>${nm(r.lock)}</td><td>${r.count}</td><td class="q4">${nm(r.pity)}</td><td>${r.w}</td><td>${r.bars}</td></tr>`;
+ h+='</tbody></table></div><div class="small">한 종류의 반복맥을 잠가 뒤의 동일맥을 삼키는 카맥을 실제 RNG로 재생한 결과입니다. </div>';
+ pityResult.innerHTML=h;
+}
+
+
+function qualityLabel(w){
+ if(+w===4)return "자맥";
+ if(+w===3)return "파맥";
+ if(+w===2)return "녹맥";
+ return "백맥";
+}
+function isConflictLowerFor(purpleId,candidateId){
+ const p=BYID.get(+purpleId),a=BYID.get(+candidateId);
+ if(!p||!a||+p.weight!==4)return false;
+ if(+purpleId===251)return false;
+ if(+p.type===248){
+   return +a.type===248 && +a.weight===4 && +a.id!==+purpleId;
+ }
+ return +a.type===+p.type && +a.weight<4;
+}
+async function analyzeRawUntilSecondPurple(){
+ if(!SAVE){rawFullSummary.innerHTML='<div class="warn">세이브를 먼저 불러오세요.</div>';return}
+ const r=roleObj();if(!r){rawFullSummary.innerHTML='<div class="warn">캐릭터를 선택하세요.</div>';return}
+ rawFullSummary.innerHTML='<div class="warn">원시맥 #1부터 두 번째 자맥까지 계산 중...</div>';
+ rawFullBody.innerHTML="";
+ await uiYield();
+
+ let st=stateFromSave(SAVE,r,+vipSel.value);
+ st=unlockAll(st);
+ let rows=[],purpleRows=[],guard=10000;
+
+ while(guard-->0 && purpleRows.length<2){
+   const beforeBars=+st.total_talent_bars;
+   const tr=washOnce(st);
+   st=tr.state;
+   const unlocked=tr.result.talents.filter(t=>!t.locked);
+
+   for(let i=0;i<unlocked.length;i++){
+     const id=+unlocked[i].id;
+     const it=BYID.get(id);
+     if(!it)continue;
+     const rec={
+       rawNo:beforeBars+i+1,
+       wash:+st.total_wash,
+       id,
+       name:nm(id),
+       weight:+it.weight,
+       type:+it.type
+     };
+     rows.push(rec);
+     if(+it.weight===4){
+       purpleRows.push(rec);
+       if(purpleRows.length>=2)break;
+     }
+   }
+   if(st.total_wash%80===0){
+     rawFullSummary.innerHTML=`<div class="warn">계산 중 · 세수 ${st.total_wash.toLocaleString()}회 · 원시 #${st.total_talent_bars.toLocaleString()} · 자맥 ${purpleRows.length}/2</div>`;
+     await uiYield();
+   }
+ }
+
+ if(purpleRows.length<2){
+   rawFullSummary.innerHTML='<div class="bad">두 번째 자맥까지 찾지 못했습니다.</div>';
+   return;
+ }
+
+ const p1=purpleRows[0],p2=purpleRows[1];
+ let h="";
+ for(const x of rows){
+   const c1=isConflictLowerFor(p1.id,x.id);
+   const c2=isConflictLowerFor(p2.id,x.id);
+   h+=`<tr>
+     <td class="num">${x.rawNo}</td>
+     <td class="num">${x.wash}</td>
+     <td class="q${Math.max(1,Math.min(4,x.weight))}">${x.name}</td>
+     <td>${qualityLabel(x.weight)}</td>
+     <td>${x.type}</td>
+     <td>${c1?'<b>● 가능</b>':"-"}</td>
+     <td>${c2?'<b>● 가능</b>':"-"}</td>
+   </tr>`;
+ }
+ rawFullBody.innerHTML=h;
+
+ const beforeP1=rows.filter(x=>x.rawNo<p1.rawNo && isConflictLowerFor(p1.id,x.id));
+ const beforeP2=rows.filter(x=>x.rawNo<p2.rawNo && isConflictLowerFor(p2.id,x.id));
+ const near1=beforeP1.length?beforeP1[beforeP1.length-1]:null;
+ const near2=beforeP2.length?beforeP2[beforeP2.length-1]:null;
+
+ rawFullSummary.innerHTML=`<div class="good">
+ <b>1번 자맥</b>: 원시 #${p1.rawNo} ${p1.name}
+ · 가장 가까운 충돌맥: ${near1?`${near1.name} (#${near1.rawNo})`:"없음"}<br>
+ <b>2번 자맥</b>: 원시 #${p2.rawNo} ${p2.name}
+ · 가장 가까운 충돌맥: ${near2?`${near2.name} (#${near2.rawNo})`:"없음"}<br>
+ <span class="small">원시 #1부터 두 번째 자맥이 나온 행까지 전부 표시합니다. 교체 N=18 검토 시 1·2번 자맥 전에 필요한 하위맥이 실제로 존재하는지 확인할 수 있습니다.</span>
+ </div>`;
+}
+
+
+
+function simPushHistory(label=""){
+ if(!SIM)return;
+ SIM_HISTORY.push({
+   state:dc(SIM),
+   log:dc(SIM_LOG),
+   role:SIM_ROLE_NAME,
+   label
+ });
+ if(SIM_HISTORY.length>2000)SIM_HISTORY.shift();
+}
+function simBack(){
+ if(!SIM_HISTORY.length){
+   simSummary.innerHTML='<div class="warn">더 이상 뒤로 갈 상태가 없습니다.</div>';
+   return;
+ }
+ const h=SIM_HISTORY.pop();
+ SIM=dc(h.state);
+ SIM_LOG=dc(h.log);
+ SIM_ROLE_NAME=h.role||SIM_ROLE_NAME;
+ simRefresh();
+ simSummary.innerHTML=`<div class="good">한 단계 되돌렸습니다${h.label?` · ${h.label} 이전`:""}.</div>`;
+}
+
+function simReady(){
+ if(!SIM){simSummary.innerHTML='<div class="warn">먼저 현재 세이브 상태로 시뮬레이션을 시작하세요.</div>';return false}
+ return true;
+}
+function simTalentText(slot){
+ const t=BYID.get(+slot.id);
+ return `${nm(slot.id)} · ${qualityLabel(t?.weight||1)} · type ${t?.type??"-"}`;
+}
+function simLog(action,result=""){
+ if(!SIM)return;
+ SIM_LOG.push({
+   n:SIM_LOG.length+1,
+   action,
+   wash:+SIM.total_wash,
+   pills:+SIM.total_pills,
+   lucky:+SIM.tal_lucky,
+   luck:SIM.luck_seed_inited?+SIM.luck_seed:"-",
+   result
+ });
+}
+function simLogPillStatus(pills){
+ const el=document.getElementById("simPillStock");
+ const stock=Math.max(0,Math.floor(+(el?.value||0)));
+ const used=Math.max(0,+pills||0);
+ if(stock>0){
+   const remain=stock-used;
+   return remain>=0?`남은 ${remain.toLocaleString()}단`:`<span class="bad">부족 ${Math.abs(remain).toLocaleString()}단</span>`;
+ }
+ return `누적 ${used.toLocaleString()}단`;
+}
+function simPracticalPillText(pills){
+ const el=document.getElementById("simPillStock");
+ const stock=Math.max(0,Math.floor(+(el?.value||0)));
+ const used=Math.max(0,+pills||0);
+ if(stock>0){
+   const remain=stock-used;
+   return remain>=0?`남은 ${remain.toLocaleString()}단`:`부족 ${Math.abs(remain).toLocaleString()}단`;
+ }
+ return `누적 ${used.toLocaleString()}단`;
+}
+function simPracticalKind(action=""){
+ const a=String(action||"");
+ if(/잠금 해제|전체 잠금 해제/.test(a))return "잠금 해제";
+ if(/잠금/.test(a))return "잠금";
+ if(/치환/.test(a))return "치환";
+ if(/칸 개방|칸 \+1/.test(a))return "칸 개방";
+ if(/다음 자맥|세수|반복|이동/.test(a))return "세수 진행";
+ if(/시뮬레이션 시작|초기 상태/.test(a))return "시작";
+ return "기타";
+}
+function simBuildPracticalExport(){
+ if(!SIM_LOG.length)return "";
+ const stock=Math.max(0,Math.floor(+(document.getElementById("simPillStock")?.value||0)));
+ const last=SIM_LOG[SIM_LOG.length-1]||{};
+ const lines=[];
+ lines.push("[낭만강호 세수작 실전 로그]");
+ lines.push(`캐릭터: ${SIM_ROLE_NAME||"-"}`);
+ lines.push(`시작 세수단: ${stock>0?stock.toLocaleString()+"단":"미입력"}`);
+ lines.push(`예상 총소모: ${(+last.pills||0).toLocaleString()}단`);
+ if(stock>0){
+   const remain=stock-(+last.pills||0);
+   lines.push(`예상 최종: ${remain>=0?"남은 "+remain.toLocaleString()+"단":"부족 "+Math.abs(remain).toLocaleString()+"단"}`);
+ }
+ lines.push("");
+ lines.push("[전체 진행 순서]");
+ SIM_LOG.forEach(x=>{
+   const kind=simPracticalKind(x.action);
+   const res=x.result?` | ${String(x.result).replace(/<[^>]+>/g,"")}`:"";
+   lines.push(`#${x.n} | ${simPracticalPillText(x.pills)} | ${kind} | ${x.action}${res}`);
+ });
+ lines.push("");
+ lines.push("※ 실제 세수작에서는 '남은 세수단'을 기준으로 다음 잠금/해제/치환 시점을 확인하세요.");
+ return lines.join("\r\n");
+}
+function simExportPracticalLog(){
+ if(!SIM_LOG.length){
+   simSummary.innerHTML='<div class="warn">내보낼 모의 세수작 로그가 없습니다.</div>';
+   return;
+ }
+ const txt=simBuildPracticalExport();
+ const blob=new Blob(["\ufeff",txt],{type:"text/plain;charset=utf-8"});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");
+ const role=(SIM_ROLE_NAME||"character").replace(/[\\/:*?"<>|]+/g,"_");
+ a.href=url;
+ a.download=`세수작_실전로그_${role}.txt`;
+ document.body.appendChild(a);
+ a.click();
+ a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ simSummary.innerHTML='<div class="good">실전용 요약 로그를 TXT로 내보냈습니다.</div>';
+}
+function simConflictRows(){
+ if(!SIM)return [];
+ const conf=exchangeConflictsExact(SIM),out=[];
+ for(let i=0;i<conf.length;i++){
+   const r=conf[i];
+   if(!r?.can_exchange)continue;
+   out.push({
+     idx:i,
+     source:+SIM.talents[i].id,
+     anchor:+SIM.talents[r.earlier_index].id
+   });
+ }
+ return out;
+}
+
+function simOpenSlots(st){
+ const z=+st.zizhi||0;
+ if(z>=154)return 4;
+ if(z>=153)return 3;
+ if(z>=152)return 2;
+ if(z>=151)return 1;
+ return 0;
+}
+function simZizhiForSlots(n){
+ if(n<=0)return 150;
+ if(n===1)return 151;
+ if(n===2)return 152;
+ if(n===3)return 153;
+ return 154;
+}
+
+
+function simPopulateFindTalentOptions(){
+ const sel=document.getElementById("simFindTalentSel");
+ if(!sel)return;
+ const prev=sel.value;
+ if(!SIM){sel.innerHTML='<option value="">시뮬레이션 시작 후 선택</option>';return}
+ const eng=engineFor(SIM);
+ const rows=[...eng.allowed].map(id=>BYID.get(+id)).filter(Boolean)
+   .filter(t=>+t.weight===4)
+   .sort((a,b)=>String(nm(a.id)).localeCompare(String(nm(b.id)),'ko'));
+ sel.innerHTML=rows.map(t=>`<option value="${t.id}">${nm(t.id)}</option>`).join("");
+ if(prev && rows.some(t=>String(t.id)===String(prev)))sel.value=prev;
+ sel.onchange=()=>{SIM_FIND_STATE={key:"",rank:0,hit:null};};
+}
+
+function isLowerConflictForPurple(purpleId,candidateId){
+ const p=BYID.get(+purpleId),a=BYID.get(+candidateId);
+ if(!p||!a||+p.weight!==4||+a.weight>=4)return false;
+ // 신맥(type 248)은 다른 신맥 자맥끼리 충돌하므로 백·녹·파 하위 충돌맥은 없다.
+ if(+p.type===248)return false;
+ if(+purpleId===251)return false;
+ return +a.type===+p.type;
+}
+
+function simScanBeforeNextPurple(start,matcher,maxWash=20000){
+ let st=dc(start),hits=[];
+ const startBars=+st.total_talent_bars||0,startWash=+st.total_wash||0,startPills=+st.total_pills||0;
+ for(let step=1;step<=maxWash;step++){
+   const beforeBars=+st.total_talent_bars||0;
+   const tr=washOnce(st);st=tr.state;
+   const fresh=tr.result.talents.filter(t=>!t.locked);
+   const purpleIdx=fresh.findIndex(t=>+BYID.get(+t.id)?.weight===4);
+   // 자맥이 뜨는 같은 세수 페이지에서는 중간 잠금이 불가능하므로 검색 범위에서 제외.
+   if(purpleIdx>=0){
+     return {hit:hits.length?hits[hits.length-1]:null,hits,nextPurple:{id:+fresh[purpleIdx].id,name:nm(fresh[purpleIdx].id),wash:+st.total_wash,rawNo:beforeBars+purpleIdx+1},
+       washes:(+st.total_wash||0)-startWash,pills:(+st.total_pills||0)-startPills};
+   }
+   for(let i=0;i<fresh.length;i++){
+     const id=+fresh[i].id;
+     if(matcher(id))hits.push({id,name:nm(id),wash:+st.total_wash,rawNo:beforeBars+i+1,
+       washesFromStart:(+st.total_wash||0)-startWash,pillsFromStart:(+st.total_pills||0)-startPills});
+   }
+ }
+ return {hit:hits.length?hits[hits.length-1]:null,hits,nextPurple:null,washes:(+st.total_wash||0)-startWash,pills:(+st.total_pills||0)-startPills};
+}
+
+function simMoveToAndLockHit(hit,label="검색 자질"){
+ if(!hit)return false;
+ const start=dc(SIM);
+ simPushHistory(`${label} 이동·잠금`);
+ let st=dc(start),guard=25000,locked=false;
+ while(guard-->0){
+   const tr=washOnce(st);st=tr.state;
+   if(+st.total_talent_bars>=+hit.rawNo){
+     const idx=st.talents.findIndex(t=>!t.locked&&+t.id===+hit.id);
+     if(idx>=0){
+       const slots=simOpenSlots(st),lockedNow=st.talents.filter(t=>t.locked).length;
+       if(lockedNow>=slots-1){
+         SIM_HISTORY.pop();
+         simSummary.innerHTML='<div class="warn">목표 자질은 찾았지만 잠글 자유 슬롯이 없습니다. 기존 잠금을 하나 해제하세요.</div>';
+         return false;
+       }
+       st.talents[idx].locked=true;locked=true;break;
+     }
+   }
+ }
+ if(!locked){SIM_HISTORY.pop();return false}
+ SIM=st;
+ simLog(`${label} 잠금`,`${hit.name} · 원시 #${hit.rawNo}`);
+ simRefresh();
+ return true;
+}
+
+function simFindTalent(moveAndLock=false){
+ if(!simReady())return;
+ const sel=document.getElementById("simFindTalentSel"),out=document.getElementById("simFindTalentResult");
+ const purpleId=+(sel?.value||0);
+ if(!purpleId){if(out)out.innerHTML='<span class="warn">준비할 자맥을 선택하세요.</span>';return}
+ const p=BYID.get(purpleId);
+ if(!p||+p.weight!==4){if(out)out.innerHTML='<span class="warn">자맥을 선택하세요.</span>';return}
+ if(+p.type===248||+purpleId===251){
+   if(out)out.innerHTML=`<span class="warn"><b>${nm(purpleId)}</b>은(는) 백·녹·파 하위 충돌맥이 없습니다.</span>`;
+   return;
+ }
+ let r;
+ try{r=simScanBeforeNextPurple(SIM,x=>isLowerConflictForPurple(purpleId,x))}
+ catch(e){if(out)out.innerHTML=`<span class="bad">검색 실패: ${e.message}</span>`;return}
+ if(!r.nextPurple){if(out)out.innerHTML='<span class="warn">다음 원시 자맥을 찾지 못했습니다.</span>';return}
+ const hits=r.hits||[];
+ if(!hits.length){
+   SIM_FIND_STATE={key:"",rank:0,hit:null};
+   if(out)out.innerHTML=`<span class="warn">다음 원시 자맥 <b>${r.nextPurple.name}</b> 전에는 <b>${nm(purpleId)}</b>의 백·녹·파 하위 충돌맥이 나오지 않습니다.</span>`;
+   return;
+ }
+ const stateKey=[purpleId,+SIM.total_wash||0,+SIM.total_pills||0,+SIM.seed||0,+SIM.luck_seed||0,SIM.talents.map(t=>`${+t.id}:${t.locked?1:0}`).join(',')].join('|');
+ let rank;
+ if(moveAndLock){
+   rank=(SIM_FIND_STATE.key===stateKey&&SIM_FIND_STATE.rank>0)?SIM_FIND_STATE.rank:1;
+ }else{
+   rank=(SIM_FIND_STATE.key===stateKey)?SIM_FIND_STATE.rank+1:1;
+   if(rank>hits.length)rank=1;
+ }
+ const hit=hits[hits.length-rank];
+ SIM_FIND_STATE={key:stateKey,rank,hit:dc(hit)};
+ const hitQ=qualityLabel(BYID.get(+hit.id)?.weight||1);
+ const rankText=rank===1?'가장 가까운':`${rank}번째로 가까운`;
+ if(out)out.innerHTML=`준비 자맥 <b>${nm(purpleId)}</b> → <b>${rankText}</b> 하위 충돌맥 <b>${hit.name}</b> (${hitQ}) · 원시 #${hit.rawNo} · 현재부터 ${hit.washesFromStart}회 / ${hit.pillsFromStart}단 · 다음 자맥 <b>${r.nextPurple.name}</b> #${r.nextPurple.rawNo} · 후보 ${rank}/${hits.length}`;
+ if(moveAndLock){
+   if(simMoveToAndLockHit(hit,`${nm(purpleId)} ${rankText} 하위 충돌맥`)){
+     if(out)out.innerHTML=`<span class="good">준비 자맥 <b>${nm(purpleId)}</b>의 <b>${rankText}</b> 하위 충돌맥 <b>${hit.name}</b> (${hitQ}) · 원시 #${hit.rawNo}까지 이동해 잠갔습니다. 다음 자맥은 ${r.nextPurple.name} #${r.nextPurple.rawNo}.</span>`;
+     SIM_FIND_STATE={key:"",rank:0,hit:null};
+   }
+ }
+}
+
+function simPrelockFirstExchangeAnchor(){
+ if(!simReady())return;
+ const out=document.getElementById("simFindTalentResult");
+ if(SIM.luck_seed_inited){
+   if(out)out.innerHTML='<span class="warn">이미 최초 치환이 끝났습니다. 이후 치환은 기존 ‘다음 치환맥+충돌맥’ 기능을 사용하세요.</span>';
+   return;
+ }
+ let seq=[];try{seq=exchangeSequence(+SIM.seed,SIM,1)}catch(e){}
+ if(!seq.length){if(out)out.innerHTML='<span class="bad">첫 치환맥을 계산하지 못했습니다.</span>';return}
+ const first=+seq[0].id,firstName=nm(first);
+ const p=BYID.get(first);
+ if(!p){return}
+ if(+first===251){if(out)out.innerHTML=`<span class="warn">첫 치환 예상값 ${firstName}은 일반 충돌맥이 없어 미리 잠글 수 없습니다.</span>`;return}
+ const r=simScanBeforeNextPurple(SIM,id=>isConflictLowerFor(first,id));
+ if(!r.nextPurple){if(out)out.innerHTML='<span class="warn">다음 원시 자맥을 찾지 못했습니다.</span>';return}
+ if(!r.hit){if(out)out.innerHTML=`<span class="warn">첫 치환 예상값 <b>${firstName}</b>의 충돌맥이 다음 원시 자맥 ${r.nextPurple.name} 전에는 나오지 않습니다.</span>`;return}
+ if(simMoveToAndLockHit(r.hit,"첫 치환맥 충돌맥")){
+   if(out)out.innerHTML=`<span class="good"><b>첫 치환 예상값 ${firstName}</b> · 가장 가까운 충돌맥 <b>${r.hit.name}</b> 원시 #${r.hit.rawNo}까지 이동해 미리 잠갔습니다. 이제 현재 원시 자맥을 확보한 뒤 최초 치환하면 연쇄 치환 준비가 됩니다.</span>`;
+ }
+}
+
+function simUpdateExchangePreview(){
+ if(!SIM){simExchangePreview.innerHTML="";return}
+ try{
+   const seed=SIM.luck_seed_inited?+SIM.luck_seed:+SIM.seed;
+   const seq=exchangeSequence(seed,SIM,15);
+   simExchangePreview.innerHTML=`<b>${SIM.luck_seed_inited?"현재 고정 치환열 · 다음 치환맥부터":"현재 최초치환 기준 예상열"}</b> · seed ${seed}<br>${seq.map((x,i)=>`${i+1}. ${x.name}`).join(" → ")}`;
+ }catch(e){simExchangePreview.innerHTML=`<span class="bad">${e.message}</span>`}
+}
+
+function simRenderRawTable(){
+ const body=document.getElementById("simRawBody");
+ const info=document.getElementById("simCostInfo");
+ const stockEl=document.getElementById("simPillStock");
+ const totalHead=document.getElementById("simTotalPillsHead");
+ const pillStock=Math.max(0,Math.floor(+(stockEl?.value||0)));
+ const stockMode=pillStock>0;
+ if(totalHead)totalHead.textContent=stockMode?"남은 세수단":"전체 소모량";
+ if(!body)return;
+ if(!RAW.length){
+   body.innerHTML='<tr><td colspan="8" class="small">원시 자맥 탭에서 먼저 원시맥 계산을 실행하세요.</td></tr>';
+   if(info)info.textContent="";
+   return;
+ }
+ const curRaw=SIM?(+SIM.total_talent_bars||0):0;
+ const curPills=SIM?(+SIM.total_pills||0):0;
+ const slots=SIM?simOpenSlots(SIM):Math.max(0,rawCalcSlots());
+ const locked=SIM?SIM.talents.filter(t=>t.locked).length:0;
+ const free=Math.max(0,slots-locked);
+ const washCost=(slots>0&&locked<slots)?COST[slots][locked]:0;
+ if(info){
+   info.innerHTML=SIM?`<span class="sim-cost-badge">열린 ${slots} · 잠금 ${locked} · 자유 ${free}칸</span> <span class="sim-cost-badge">1회 ${washCost||"-"}단</span> ${stockMode?`<span class="sim-cost-badge">보유 ${pillStock.toLocaleString()}단 · 남은량 표시</span>`:`<span class="sim-cost-badge">현재 누적 ${curPills.toLocaleString()}단 · 소모량 표시</span>`}`:"";
+ }
+ let nextIdx=RAW.findIndex(x=>+x.wash_no>curRaw);
+ if(nextIdx<0)nextIdx=RAW.length;
+ const from=nextIdx,to=Math.min(RAW.length,nextIdx+7);
+ let h="";
+ for(let i=from;i<to;i++){
+   const x=RAW[i];
+   let state=i===nextIdx?"▶ 다음":"예정",rowStyle=i===nextIdx?' style="font-weight:700;background:#fff7d6"':"";
+   let need="-",total="-";
+   if(SIM){
+     if(free<=0){
+       need='<span class="bad" style="padding:2px 5px">자유칸 없음</span>';
+       total="-";
+     }else{
+       const rawNeed=Math.max(0,+x.wash_no-curRaw);
+       const washes=Math.ceil(rawNeed/free);
+       const pills=washes*washCost;
+       need=`<b>${washes}회 / ${pills}단</b><br><span class="small">원시 ${rawNeed}칸</span>`;
+       if(stockMode){
+         const totalUsed=curPills+pills;
+         const remain=pillStock-totalUsed;
+         total=remain>=0?`<b>${remain.toLocaleString()}단</b><br><span class="small">누적 사용 ${totalUsed.toLocaleString()}단 · 추가 ${pills.toLocaleString()}단</span>`:`<span class="bad" style="padding:2px 5px"><b>부족 ${Math.abs(remain).toLocaleString()}단</b></span><br><span class="small">누적 필요 ${totalUsed.toLocaleString()}단 · 추가 ${pills.toLocaleString()}단</span>`;
+       }else{
+         total=`<b>${(curPills+pills).toLocaleString()}단</b>`;
+       }
+     }
+   }else{
+     const baseCost=stSlotsCostBase();
+     const washes=+x.wash_times||0;
+     const pills=washes*baseCost;
+     need=`${x.segment_pills??"-"}단`;
+     if(stockMode){
+       const remain=pillStock-pills;
+       total=remain>=0?`${remain.toLocaleString()}단`:`<span class="bad">부족 ${Math.abs(remain).toLocaleString()}단</span>`;
+     }else total=`${pills.toLocaleString()}단`;
+   }
+   const conf=x.earlier_conflict_name?`<b>${x.earlier_conflict_name}</b>`:"없음";
+   h+=`<tr${rowStyle}><td>${state}</td><td class="num">${x.wash_no}</td><td class="num">${need}</td><td class="num">${total}</td><td class="q4">${x.talent_name}</td><td>${x.was_pity?"★":"-"}</td><td>${conf}${x.earlier_conflict_wash_no!=null?` <span class="small">#${x.earlier_conflict_wash_no}</span>`:""}</td><td>${x.can_exchange&&!x.was_pity&&!x.hasPriorPity?"가능":"불가"}</td></tr>`;
+ }
+ body.innerHTML=h||'<tr><td colspan="8">현재 위치 이후 표시할 원시 자맥이 없습니다.</td></tr>';
+}
+
+function simRefresh(){
+ if(!SIM){
+   simSlots.innerHTML="";
+   simExchangeSel.innerHTML="";
+   simSummary.innerHTML="시뮬레이션을 시작하세요.";
+   simExchangePreview.innerHTML="";
+   simPopulateFindTalentOptions();
+   const fr=document.getElementById("simFindTalentResult");if(fr)fr.textContent="준비할 자맥만 선택하세요. 다음 원시 자맥 전 구간에서 같은 계열의 백·녹·파맥 중 가장 가까운 충돌맥을 자동으로 찾습니다.";
+   simLogBody.innerHTML="";
+   const recent=document.getElementById("simRecentLog");if(recent)recent.innerHTML="동작 기록 없음";
+   simRenderRawTable();
+   return;
+ }
+ const slots=simOpenSlots(SIM);
+ const locked=SIM.talents.filter(t=>t.locked).length;
+ simSummary.innerHTML=`<b>${SIM_ROLE_NAME||"캐릭터"}</b> · <b>열린 슬롯 ${slots}칸</b> · 현재 맥 ${SIM.talents.length}개 · 잠금 ${locked}개 · 세수 ${SIM.total_wash}회 · 누적 ${SIM.total_pills}단 · TalLucky ${SIM.tal_lucky} · Born seed ${SIM.seed} · Luck ${SIM.luck_seed_inited?SIM.luck_seed:"미고정"}`;
+
+ const slotConflictRows=exchangeConflictsExact(SIM);
+ let sh="";
+ for(let i=0;i<4;i++){
+   const opened=i<slots;
+   const sl=opened?(SIM.talents[i]||null):null;
+   if(!opened){
+     sh+=`<div style="border:1px dashed #c9ced4;border-radius:8px;padding:10px;min-height:86px;opacity:.7">
+       <b>슬롯 ${i+1}</b><br>
+       <span class="small">미개방</span>
+     </div>`;
+     continue;
+   }
+   if(!sl){
+     sh+=`<div style="border:1px dashed #b8bec6;border-radius:8px;padding:10px;min-height:86px">
+       <b>슬롯 ${i+1}</b><br>
+       <span class="small">열림 · 빈칸</span><br>
+       <button type="button" disabled style="margin-top:8px">잠금 불가</button>
+     </div>`;
+     continue;
+   }
+   const t=BYID.get(+sl.id);
+   const canExchange=!!(slotConflictRows[i]?.can_exchange && +t?.weight===4);
+   const exchangeIcon=canExchange?`<span class="sim-exchange-icon" title="충돌교체 가능" aria-label="충돌교체 가능"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10l-2.6-2.6M17 17H7l2.6 2.6M18.5 7.5A7 7 0 0 1 19 10M5 14a7 7 0 0 1 .5-2.5"/></svg></span>`:"";
+   sh+=`<div style="border:1px solid #ccd1d7;border-radius:8px;padding:10px;min-height:86px">
+     <div style="display:flex;align-items:center;gap:2px"><b>슬롯 ${i+1}</b> · <span class="q${Math.max(1,Math.min(4,+t?.weight||1))}">${nm(sl.id)}</span>${exchangeIcon}</div>
+     <div class="small">${qualityLabel(t?.weight||1)} · type ${t?.type??"-"}</div>
+     <div style="margin-top:8px">
+       ${sl.locked?'<span class="badge">🔒 잠금됨</span>':""}
+       <button type="button" class="simLockBtn" data-idx="${i}" data-act="${sl.locked?"unlock":"lock"}">${sl.locked?"잠금 해제":"잠금"}</button>
+     </div>
+   </div>`;
+ }
+ simSlots.innerHTML=sh;
+ document.querySelectorAll(".simLockBtn").forEach(el=>el.onclick=()=>{
+   const idx=+el.dataset.idx,act=el.dataset.act,slots=simOpenSlots(SIM);
+   const sl=SIM.talents[idx];
+   if(!sl)return;
+   if(act==="lock"){
+     const lockedNow=SIM.talents.filter(t=>t.locked).length;
+     if(lockedNow>=slots-1){
+       // 마지막 자유칸 잠금은, 그 결과 즉시 충돌치환 가능한 쌍이 생기는 경우 허용.
+       const test=dc(SIM);
+       test.talents[idx].locked=true;
+       const canImmediate=exchangeConflictsExact(test).some(r=>r?.can_exchange);
+       if(!canImmediate){
+         simSummary.innerHTML='<div class="warn">마지막 자유칸은 즉시 충돌치환 가능한 상태일 때만 잠글 수 있습니다.</div>';
+         return;
+       }
+     }
+     simPushHistory(`슬롯 ${idx+1} 잠금`);
+     SIM.talents[idx].locked=true;
+     simLog(`슬롯 ${idx+1} 잠금`,nm(sl.id));
+   }else{
+     simPushHistory(`슬롯 ${idx+1} 잠금 해제`);
+     SIM.talents[idx].locked=false;
+     simLog(`슬롯 ${idx+1} 잠금 해제`,nm(sl.id));
+   }
+   simRefresh();
+ });
+
+ simPopulateFindTalentOptions();
+ const rows=simConflictRows();
+ simExchangeSel.innerHTML=rows.length
+   ? rows.map(x=>`<option value="${x.idx}">${nm(x.source)} ← 충돌맥 ${nm(x.anchor)}</option>`).join("")
+   : '<option value="">현재 치환 가능 충돌쌍 없음</option>';
+
+ // 치환열은 버튼을 다시 누르지 않아도 현재 상태에 맞춰 자동 갱신한다.
+ // 실제 치환 성공 시 luck_seed가 다음 항목으로 진행되므로 다음 치환맥부터 즉시 표시된다.
+ simUpdateExchangePreview();
+
+ simLogBody.innerHTML=SIM_LOG.map(x=>`<tr>
+   <td>${x.n}</td><td>${x.action}</td><td>${x.wash}</td><td>${x.pills}</td><td>${x.lucky}</td><td>${x.luck}</td><td>${x.result}</td>
+ </tr>`).join("");
+ const recent=document.getElementById("simRecentLog");
+ if(recent){
+   recent.innerHTML=[...SIM_LOG].reverse().map(x=>`<div><b>#${x.n} ${x.action}</b><br><span class="small">세수 ${x.wash}회 · ${simLogPillStatus(x.pills)} · TalLucky ${x.lucky}${x.luck!=="-"?` · Luck ${x.luck}`:""}</span>${x.result?`<br>${x.result}`:""}</div>`).join("")||"동작 기록 없음";
+ }
+ simRenderRawTable();
+}
+function simStart(){
+ simCancelRunning();
+ if(!SAVE||!roleObj()){simSummary.innerHTML='<div class="warn">세이브와 캐릭터를 먼저 선택하세요.</div>';return}
+ SIM=stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi());
+ SIM_ROLE_NAME=roleObj()?.Name||"캐릭터";
+ SIM.bag_pills=999999999;SIM.has_bag_pills=true;
+ SIM_BASE=dc(SIM);SIM_LOG=[];SIM_HISTORY=[];SIM_FIND_STATE={key:"",rank:0,hit:null};
+ simLog("시뮬레이션 시작",SIM.talents.map((t,i)=>`슬롯${i+1} ${nm(t.id)}${t.locked?"[잠금]":""}`).join(" / "));
+ simRefresh();
+}
+function simReset(){
+ simCancelRunning();
+ if(!SIM_BASE){simSummary.innerHTML='<div class="warn">먼저 시뮬레이션을 시작하세요.</div>';return}
+ simPushHistory("초기화");
+ SIM=dc(SIM_BASE);SIM_LOG=[];SIM_FIND_STATE={key:"",rank:0,hit:null};
+ simLog("초기 상태로 복원",SIM.talents.map(t=>nm(t.id)).join(" / "));
+ simRefresh();
+}
+async function simWashTimes(n,label=null){
+ const epoch=SIM_EPOCH;
+ if(!simReady())return;
+ if(simOpenSlots(SIM)<=0){simSummary.innerHTML='<div class="warn">세수하려면 먼저 1칸 이상 개방하세요.</div>';return}
+ n=Math.max(1,Math.min(5000,+n||1));
+ simPushHistory(label||`세수 ${n}번`);
+ for(let i=0;i<n;i++){
+   if(!simEpochAlive(epoch))return;
+   SIM=washOnce(SIM).state;
+   if(i%100===99){simSummary.innerHTML=`<div class="warn">${label||"세수"} 진행 중 · ${i+1}/${n}</div>`;await uiYield();if(!simEpochAlive(epoch))return;}
+ }
+ simLog(label||`세수 ${n}번`,SIM.talents.map(t=>nm(t.id)).join(" / "));
+ simRefresh();
+}
+async function simWashToPurple(){
+ const epoch=SIM_EPOCH;
+ if(!simReady())return;
+ if(simOpenSlots(SIM)<=0){simSummary.innerHTML='<div class="warn">세수하려면 먼저 1칸 이상 개방하세요.</div>';return}
+ simPushHistory("다음 자맥까지");
+ let guard=10000;
+ while(guard-->0){
+   if(!simEpochAlive(epoch))return;
+   SIM=washOnce(SIM).state;
+   const p=SIM.talents.find(t=>!t.locked&&+BYID.get(+t.id)?.weight===4);
+   if(p){
+     simLog("다음 자맥까지",`${nm(p.id)} 등장`);
+     simRefresh();return;
+   }
+   if(guard%100===0){simSummary.innerHTML=`<div class="warn">다음 자맥 탐색 중 · 세수 ${SIM.total_wash}회</div>`;await uiYield();if(!simEpochAlive(epoch))return;}
+ }
+ simSummary.innerHTML='<div class="bad">다음 자맥을 찾지 못했습니다.</div>';
+}
+function simIsAnchorCandidate(id){
+ const t=BYID.get(+id);
+ if(!t)return false;
+ if(+t.weight<4)return true;
+ return +t.type===248 && +t.weight===4;
+}
+async function simWashToPair(){
+ const epoch=SIM_EPOCH;
+ if(!simReady())return;
+ const slots=simOpenSlots(SIM);
+ if(slots<=0){
+   simSummary.innerHTML='<div class="warn">먼저 최소 1칸을 개방하세요.</div>';
+   return;
+ }
+
+ simPushHistory("다음 원시 자맥 + 직전 충돌맥까지");
+
+ // 정확한 의미:
+ // "다음 원시 자맥 + 그 자맥보다 앞에 실제로 나온 가장 가까운 충돌맥"
+ // 현재 시뮬 상태를 기준으로 미래 원시열을 먼저 스캔한다.
+ // 충돌맥을 임의로 선잠금하지 않는다.
+ const start=dc(SIM);
+ let probe=dc(SIM);
+ let rawBeforePurple=[];
+ let targetPurple=null;
+ let guard=20000,steps=0;
+
+ while(guard-->0){
+   if(!simEpochAlive(epoch))return;
+   const beforeBars=+probe.total_talent_bars;
+   const tr=washOnce(probe);
+   probe=tr.state;
+   steps++;
+
+   const generated=tr.result.talents.filter(t=>!t.locked);
+   for(let i=0;i<generated.length;i++){
+     const id=+generated[i].id;
+     const it=BYID.get(id);
+     if(!it)continue;
+     const rec={
+       id,
+       name:nm(id),
+       weight:+it.weight,
+       type:+it.type,
+       rawNo:beforeBars+i+1,
+       wash:+probe.total_wash
+     };
+
+     if(+it.weight===4){
+       targetPurple=rec;
+       break;
+     }
+     rawBeforePurple.push(rec);
+   }
+   if(targetPurple)break;
+
+   if(steps%100===0){
+     simSummary.innerHTML=`<div class="warn">다음 원시 자맥 탐색 중 · ${steps}회 진행 · 원시 ${probe.total_talent_bars}</div>`;
+     await uiYield();if(!simEpochAlive(epoch))return;;
+   }
+ }
+
+ if(!targetPurple){
+   simSummary.innerHTML='<div class="bad">다음 원시 자맥을 찾지 못했습니다.</div>';
+   return;
+ }
+
+ // 다음 자맥 기준으로 그 전에 나온 "가장 가까운" 실제 충돌맥을 역순 검색.
+ let anchor=null;
+ for(let i=rawBeforePurple.length-1;i>=0;i--){
+   const r=rawBeforePurple[i];
+   if(isConflictLowerFor(targetPurple.id,r.id)){
+     anchor=r;
+     break;
+   }
+ }
+
+ if(!anchor){
+   simSummary.innerHTML=`<div class="warn">다음 원시 자맥은 <b>${targetPurple.name}</b> (#${targetPurple.rawNo})이지만, 그 전에 유효한 충돌맥이 없습니다.</div>`;
+   simLog("다음 자맥+충돌쌍 탐색",`${targetPurple.name} · 앞선 충돌맥 없음`);
+   return;
+ }
+
+ // 실제 조작 가능 상태를 만들기 위해:
+ // 시작 상태로 되돌아가 anchor가 등장하는 지점까지 진행 → anchor 잠금 →
+ // 같은 원시 흐름을 계속 진행해 target purple이 실제로 나타날 때 정지.
+ SIM=dc(start);
+ let anchorLocked=false,finalPurple=null,run=0,guard2=25000;
+
+ while(guard2-->0){
+   const beforeBars=+SIM.total_talent_bars;
+   const tr=washOnce(SIM);
+   SIM=tr.state;
+   run++;
+
+   // anchor 원시 순번에 도달하면 해당 맥을 실제 슬롯에서 잠금.
+   if(!anchorLocked && +SIM.total_talent_bars>=anchor.rawNo){
+     const ai=SIM.talents.findIndex(t=>!t.locked && +t.id===+anchor.id);
+     if(ai>=0){
+       // 최소 한 자유칸은 남겨야 함.
+       if(SIM.talents.filter(t=>t.locked).length < slots-1){
+         SIM.talents[ai].locked=true;
+         anchorLocked=true;
+         simLog("충돌맥 잠금",`${anchor.name} · 원시 #${anchor.rawNo}`);
+       }
+     }
+   }
+
+   if(anchorLocked){
+     const rows=simConflictRows();
+     const hit=rows.find(x=>+x.source===+targetPurple.id && +x.anchor===+anchor.id);
+     if(hit){
+       finalPurple=hit;
+       break;
+     }
+   }
+
+   if(run%100===0){
+     simSummary.innerHTML=`<div class="warn">충돌쌍 실제 재현 중 · ${run}회 진행 · ${anchorLocked?`충돌맥 ${anchor.name} 잠금됨`:`충돌맥 ${anchor.name} 대기`}</div>`;
+     await uiYield();if(!simEpochAlive(epoch))return;;
+   }
+ }
+
+ if(!anchorLocked){
+   SIM=dc(start);
+   simSummary.innerHTML=`<div class="bad">원시 #${anchor.rawNo} ${anchor.name}을 실제 슬롯에서 잠그지 못했습니다.</div>`;
+   return;
+ }
+ if(!finalPurple){
+   simSummary.innerHTML=`<div class="bad">${anchor.name}을 잠갔지만 다음 원시 자맥 ${targetPurple.name}과 실제 충돌 상태를 재현하지 못했습니다.</div>`;
+   return;
+ }
+
+ simLog(
+   "다음 자맥+충돌쌍까지",
+   `${anchor.name} (#${anchor.rawNo}) + ${targetPurple.name} (#${targetPurple.rawNo})`
+ );
+ simRefresh();
+ simSummary.innerHTML=`<div class="good">
+   <b>다음 원시 자맥:</b> ${targetPurple.name} (원시 #${targetPurple.rawNo})<br>
+   <b>그 전 가장 가까운 충돌맥:</b> ${anchor.name} (원시 #${anchor.rawNo})<br>
+   실제 시뮬 상태도 이 충돌맥을 잠근 뒤 ${targetPurple.name}이 나온 시점으로 이동했습니다.
+ </div>`;
+}
+
+function simUnlockAll(){
+ if(!simReady())return;
+ simPushHistory("전체 잠금 해제");
+ let changed=0;
+ for(const t of SIM.talents){
+   if(t.locked){t.locked=false;changed++}
+ }
+ simLog("전체 잠금 해제",`${changed}개 잠금 해제`);
+ simRefresh();
+}
+
+function simExpand(){
+ if(!simReady())return;
+ const cur=simOpenSlots(SIM);
+ if(cur>=4){simSummary.innerHTML='<div class="warn">이미 4칸이 모두 개방되어 있습니다.</div>';return}
+ const next=cur+1;
+ simPushHistory("칸 개방");
+ SIM.zizhi=simZizhiForSlots(next);
+ simLog("칸 개방",`${cur}칸 → ${next}칸`);
+ simRefresh();
+}
+function simExchange(){
+ if(!simReady())return;
+ const idx=Number(simExchangeSel.value);
+ if(!Number.isInteger(idx)){simSummary.innerHTML='<div class="warn">현재 치환 가능한 충돌쌍이 없습니다.</div>';return}
+ try{
+   simPushHistory("치환");
+   const before=+SIM.talents[idx].id;
+   const ex=exchangeOnceExact(SIM,idx);
+   SIM=ex.state;
+   simLog("치환",`${nm(before)} → ${nm(ex.to)}`);
+   simRefresh();
+ }catch(e){simSummary.innerHTML=`<div class="bad">치환 실패: ${e.message}</div>`}
+}
+
+
+function simPreparedExchangeTarget(st){
+ if(!st?.luck_seed_inited)return null;
+ const slots=simOpenSlots(st);
+ let seq=[];
+ try{seq=exchangeSequence(+st.luck_seed,st,Math.max(8,slots+4))}catch(e){}
+ if(!seq.length)return null;
+ const lockedNow=st.talents.map((t,i)=>({t,i})).filter(x=>x.t.locked);
+ const usedLocked=new Set();
+ let prepared=0;
+ for(let qi=0;qi<seq.length;qi++){
+   const target=+seq[qi].id;
+   const hit=lockedNow.find(x=>!usedLocked.has(x.i) && isConflictLowerFor(target,+x.t.id));
+   if(!hit)break;
+   usedLocked.add(hit.i);prepared++;
+ }
+ if(prepared>=seq.length)return null;
+ return {id:+seq[prepared].id,name:nm(seq[prepared].id),order:prepared+1};
+}
+function simFirstFuturePurple(st,maxWash=2000){
+ let p=dc(st);
+ for(let w=1;w<=maxWash;w++){
+   const beforeBars=+p.total_talent_bars;
+   const tr=washOnce(p);p=tr.state;
+   const generated=tr.result.talents.filter(t=>!t.locked);
+   for(let i=0;i<generated.length;i++){
+     const id=+generated[i].id,it=BYID.get(id);
+     if(it&&+it.weight===4)return {id,name:nm(id),rawNo:beforeBars+i+1,wash:+p.total_wash,pills:+p.total_pills};
+   }
+ }
+ return null;
+}
+function simHasLowerLock(st,purpleId){
+ return st.talents.some(t=>t.locked&&isConflictLowerFor(purpleId,+t.id));
+}
+function simDualAnchorSig(st){
+ return [
+   +st.seed||0,+st.luck_seed||0,+st.tal_lucky||0,+st.total_wash||0,+st.total_talent_bars||0,
+   st.talents.map(t=>`${+t.id}:${t.locked?1:0}`).join(',')
+ ].join('|');
+}
+async function simWashToDualAnchorBeforePurple(){
+ const epoch=SIM_EPOCH;
+ if(!simReady())return;
+ if(!SIM.luck_seed_inited){
+   simSummary.innerHTML='<div class="warn">아직 치환표가 고정되지 않았습니다. 먼저 최초 치환을 실행하세요.</div>';
+   return;
+ }
+ const start=dc(SIM),slots=simOpenSlots(start);
+ if(slots<2){simSummary.innerHTML='<div class="warn">충돌맥 2개를 준비하려면 슬롯이 더 필요합니다.</div>';return}
+ const exTarget=simPreparedExchangeTarget(start);
+ if(!exTarget){simSummary.innerHTML='<div class="warn">다음 치환 자맥을 계산하지 못했습니다.</div>';return}
+ const rawTarget=simFirstFuturePurple(start,2500);
+ if(!rawTarget){simSummary.innerHTML='<div class="warn">다음 원시 자맥을 계산하지 못했습니다.</div>';return}
+
+ const startPills=+start.total_pills||0;
+ const maxExtraWashes=1200;
+ const nodeLimit=12000;
+ let queue=[{st:start,locks:[],steps:0}],seen=new Map(),best=null,expanded=0;
+ const existingRaw=simHasLowerLock(start,rawTarget.id),existingEx=simHasLowerLock(start,exTarget.id);
+
+ while(queue.length&&expanded<nodeLimit){
+   if(!simEpochAlive(epoch))return;
+   queue.sort((a,b)=>(+a.st.total_pills)-(+b.st.total_pills)||a.steps-b.steps);
+   const cur=queue.shift();expanded++;
+   if(cur.steps>=maxExtraWashes)continue;
+   if(best && +cur.st.total_pills>=+best.st.total_pills)continue;
+   const sig=simDualAnchorSig(cur.st),prev=seen.get(sig);
+   if(prev!=null&&prev<=+cur.st.total_pills)continue;
+   seen.set(sig,+cur.st.total_pills);
+
+   const beforeBars=+cur.st.total_talent_bars;
+   let tr;
+   try{tr=washOnce(cur.st)}catch(e){continue}
+   const next=tr.state;
+   const generated=tr.result.talents.filter(t=>!t.locked);
+   const purples=[];
+   for(let i=0;i<generated.length;i++){
+     const id=+generated[i].id,it=BYID.get(id);
+     if(it&&+it.weight===4)purples.push({id,idx:i,rawNo:beforeBars+i+1});
+   }
+   if(purples.length){
+     const hit=purples.find(x=>x.id===+rawTarget.id);
+     if(hit && simHasLowerLock(next,rawTarget.id) && simHasLowerLock(next,exTarget.id)){
+       const cand={st:next,locks:cur.locks,purple:hit,steps:cur.steps+1};
+       if(!best || +cand.st.total_pills<+best.st.total_pills)best=cand;
+     }
+     // 다음 자맥 전에 두 충돌맥을 준비하는 기능이므로 자맥이 한 번 뜬 분기는 여기서 종료.
+     continue;
+   }
+
+   const relevant=[];
+   for(let i=0;i<next.talents.length;i++){
+     const t=next.talents[i];
+     if(t.locked)continue;
+     const id=+t.id;
+     const forRaw=isConflictLowerFor(rawTarget.id,id),forEx=isConflictLowerFor(exTarget.id,id);
+     if(forRaw||forEx)relevant.push({i,id,forRaw,forEx,name:nm(id),rawNo:null});
+   }
+
+   // 아무것도 잠그지 않고 계속 가는 분기.
+   queue.push({st:next,locks:cur.locks,steps:cur.steps+1});
+
+   const lockedCount=next.talents.filter(t=>t.locked).length;
+   const maxNew=Math.max(0,slots-1-lockedCount); // 다음 자맥이 나올 자유칸 1개는 반드시 남김.
+   if(maxNew>0 && relevant.length){
+     // 관련 후보가 여러 개 같은 페이지에 있으면 1개 또는 2개 동시 잠금도 허용.
+     const subsets=[];
+     for(let i=0;i<relevant.length;i++)subsets.push([relevant[i]]);
+     if(maxNew>=2){
+       for(let i=0;i<relevant.length;i++)for(let j=i+1;j<relevant.length;j++)subsets.push([relevant[i],relevant[j]]);
+     }
+     for(const sub of subsets){
+       if(sub.length>maxNew)continue;
+       let ns=dc(next),newLocks=[...cur.locks],ok=true;
+       for(const r of sub){
+         if(ns.talents[r.i]?.locked){ok=false;break}
+         ns.talents[r.i].locked=true;
+         newLocks.push({id:r.id,name:r.name,forRaw:r.forRaw,forEx:r.forEx,wash:+ns.total_wash,pills:+ns.total_pills});
+       }
+       if(ok)queue.push({st:ns,locks:newLocks,steps:cur.steps+1});
+     }
+   }
+   if(expanded%150===0){
+     simSummary.innerHTML=`<div class="warn">다음 자맥 전 2충돌맥 경로 탐색 중 · 상태 ${expanded}개 · ${rawTarget.name} / ${exTarget.name}</div>`;
+     await uiYield();if(!simEpochAlive(epoch))return;if(!simEpochAlive(epoch))return;;
+   }
+ }
+
+ if(!best){
+   simSummary.innerHTML=`<div class="warn"><b>${rawTarget.name}</b>이 나오기 전에 <b>${rawTarget.name}용 하위맥</b>과 <b>${exTarget.name}용 하위맥</b>을 둘 다 잠글 수 있는 경로를 찾지 못했습니다.</div>`;
+   return;
+ }
+ simPushHistory('다음 자맥 전 2충돌맥');
+ SIM=dc(best.st);
+ const rawLock=SIM.talents.find(t=>t.locked&&isConflictLowerFor(rawTarget.id,+t.id));
+ const exLock=SIM.talents.find(t=>t.locked&&isConflictLowerFor(exTarget.id,+t.id));
+ const extra=(+SIM.total_pills||0)-startPills;
+ simLog('다음 자맥 전 2충돌맥',`${rawTarget.name}용 ${rawLock?nm(rawLock.id):'-'} + ${exTarget.name}용 ${exLock?nm(exLock.id):'-'} → ${rawTarget.name} 등장 · 추가 ${extra}단`);
+ simRefresh();
+ simSummary.innerHTML=`<div class="good">
+   <b>1번 경로 자동 탐색 완료</b><br>
+   다음 원시 자맥: <b>${rawTarget.name}</b><br>
+   원시 자맥용 하위맥: <b>${rawLock?nm(rawLock.id):'-'}</b><br>
+   다음 치환 자맥: <b>${exTarget.name}</b><br>
+   치환 자맥용 하위맥: <b>${exLock?nm(exLock.id):'-'}</b><br>
+   두 충돌맥을 모두 잠근 뒤 ${rawTarget.name}이 실제로 나온 상태까지 이동했습니다.<br>
+   추가 소모: <b>${extra.toLocaleString()}단</b> · 탐색 상태 ${expanded.toLocaleString()}개
+ </div>`;
+}
+
+async function simWashToNextExchangeAnchor(){
+ const epoch=SIM_EPOCH;
+ if(!simReady())return;
+ if(!SIM.luck_seed_inited){
+   simSummary.innerHTML='<div class="warn">아직 치환표가 고정되지 않았습니다. 먼저 최초 치환을 실행하세요.</div>';
+   return;
+ }
+ const slots=simOpenSlots(SIM);
+ if(slots<=0){
+   simSummary.innerHTML='<div class="warn">먼저 슬롯을 개방하세요.</div>';
+   return;
+ }
+
+ // 현재 Luck seed에서 미래 치환열을 넉넉히 확인.
+ // 이미 잠긴 충돌맥이 앞쪽 치환 결과용으로 준비되어 있으면 그만큼 건너뛰어
+ // 버튼을 다시 누를 때 다음 → 다다음 → 다다다음 치환맥용 충돌맥을 차례로 준비한다.
+ let seq=[];
+ try{seq=exchangeSequence(+SIM.luck_seed,SIM,Math.max(8,slots+4))}catch(e){}
+ if(!seq.length){
+   simSummary.innerHTML='<div class="bad">미래 치환맥을 계산하지 못했습니다.</div>';
+   return;
+ }
+
+ const lockedNow=SIM.talents.map((t,i)=>({t,i})).filter(x=>x.t.locked);
+ const usedLocked=new Set();
+ let prepared=0;
+ for(let qi=0;qi<seq.length;qi++){
+   const target=+seq[qi].id;
+   const hit=lockedNow.find(x=>!usedLocked.has(x.i) && isConflictLowerFor(target,+x.t.id));
+   if(!hit)break;
+   usedLocked.add(hit.i);
+   prepared++;
+ }
+ if(prepared>=seq.length){
+   simSummary.innerHTML='<div class="warn">현재 잠금만으로 준비된 치환 단계가 계산 가능한 미래 치환열 범위를 모두 사용했습니다.</div>';
+   return;
+ }
+ const targetIndex=prepared;
+ const nextTarget=+seq[targetIndex].id;
+ const targetName=nm(nextTarget);
+ const targetOrder=targetIndex+1;
+ const targetLabel=targetOrder===1?'다음':(targetOrder===2?'다다음':`${targetOrder}번째 미래`);
+
+ // 이 버튼의 의미:
+ // 이미 잠가둔 미래 치환용 충돌맥은 그대로 유지하고,
+ // 아직 준비되지 않은 가장 앞의 치환 결과에 필요한 충돌맥을 찾아 추가 잠금한다.
+ const start=dc(SIM);
+ let probe=dc(SIM),cands=[],foundAnchor=null,guard=20000,steps=0;
+
+ while(simEpochAlive(epoch) && guard-->0){
+   if(!simEpochAlive(epoch))return;
+   const beforeBars=+probe.total_talent_bars;
+   const tr=washOnce(probe);
+   probe=tr.state;steps++;
+
+   const generated=tr.result.talents.filter(t=>!t.locked);
+   for(let i=0;i<generated.length;i++){
+     const id=+generated[i].id;
+     const it=BYID.get(id);if(!it)continue;
+     const rec={id,name:nm(id),rawNo:beforeBars+i+1,wash:+probe.total_wash};
+     if(isConflictLowerFor(nextTarget,id)){
+       foundAnchor=rec;
+       break;
+     }
+   }
+   if(foundAnchor)break;
+
+   if(steps%100===0){
+     simSummary.innerHTML=`<div class="warn">${targetLabel} 치환맥 ${targetName}의 충돌맥 탐색 중 · ${steps}회 진행</div>`;
+     await uiYield();if(!simEpochAlive(epoch))return;;if(!simEpochAlive(epoch))return;;
+   }
+ }
+
+ if(!foundAnchor){
+   simSummary.innerHTML=`<div class="warn">${targetLabel} 치환맥 <b>${targetName}</b>의 충돌맥을 앞으로 찾지 못했습니다.</div>`;
+   return;
+ }
+
+ // 이제 실제 SIM을 같은 시작점에서 재생하여 해당 충돌맥 등장 시 잠금.
+ simPushHistory(`${targetLabel} 치환맥 ${targetName}의 충돌맥까지`);
+ SIM=dc(start);
+ let locked=false,run=0,guard2=25000;
+
+ while(guard2-->0){
+   const tr=washOnce(SIM);SIM=tr.state;run++;
+   if(+SIM.total_talent_bars>=foundAnchor.rawNo){
+     const ai=SIM.talents.findIndex(t=>!t.locked&&+t.id===+foundAnchor.id);
+     if(ai>=0){
+       // 이 기능의 목적지는 "다음 치환맥용 충돌맥이 실제로 나온 순간"이다.
+       // 따라서 4칸에서 이미 3칸이 잠겨 있어도 마지막 1칸에 목표 충돌맥이 뜨면
+       // 4번째까지 잠가 4잠금 상태로 멈추는 것이 맞다. 이후 즉시 충돌치환을 실행할 수 있다.
+       // 일반 세수에서는 자유칸이 필요하지만, 이 자동진행의 종착점에서는 예외로 허용.
+       SIM.talents[ai].locked=true;
+       locked=true;
+       simLog(`${targetLabel} 치환맥 충돌맥 잠금`,`${targetName}용 ${foundAnchor.name} · 원시 #${foundAnchor.rawNo}`);
+       break;
+     }
+   }
+   if(run%100===0){
+     simSummary.innerHTML=`<div class="warn">${targetLabel} ${targetName}용 충돌맥 ${foundAnchor.name} 재현 중 · ${run}회 진행</div>`;
+     await uiYield();if(!simEpochAlive(epoch))return;;if(!simEpochAlive(epoch))return;;
+   }
+ }
+
+ if(!locked){
+   SIM=dc(start);
+   SIM_HISTORY.pop();
+   simSummary.innerHTML=`<div class="bad">${foundAnchor.name}을 실제 슬롯에 재현하지 못했습니다.</div>`;
+   return;
+ }
+
+ simRefresh();
+ simSummary.innerHTML=`<div class="good">
+ <b>${targetLabel} 치환맥:</b> ${targetName}<br>
+ <b>그 치환맥의 가장 가까운 미래 충돌맥:</b> ${foundAnchor.name} (원시 #${foundAnchor.rawNo})<br>
+ 해당 충돌맥이 실제 슬롯에 나온 시점까지 세수하고 잠근 상태로 멈췄습니다.<br>
+ ${SIM.talents.filter(t=>t.locked).length===simOpenSlots(SIM)?'<b>현재 모든 슬롯 잠금 상태입니다. 세수는 못 하지만 바로 충돌치환은 가능합니다.</b>':""}
+ </div>`;
+}
+
+function simPreviewExchange(){
+ if(!simReady())return;
+ simUpdateExchangePreview();
+ simRenderRawTable();
+}
+
+function populateRoles(){
+ if(!SAVE){roleSel.innerHTML='<option value="">세이브를 먼저 불러오세요</option>';return}
+ roleSel.innerHTML=rolesOf(SAVE).map(([k,r])=>`<option value="${r.ID}">${k==="주인공"?"★ ":""}${r.Name||("ID "+r.ID)} · ${Math.max(0,+(r.ZiZhi||150)-150)}칸</option>`).join("");
+}
+function saveRoleSlots(){
+ const r=roleObj();
+ return r?Math.max(0,Math.min(4,+(r.ZiZhi||150)-150)):0;
+}
+function syncRawSlots(reset=false){
+ const base=saveRoleSlots();
+ if(reset || rawSlots.dataset.userSet!=="1") rawSlots.value=String(base);
+ rawSlotInfo.textContent=`세이브 ${base}칸 · 원시 계산 ${+rawSlots.value}칸`;
+}
+function rawCalcZizhi(){ return 150 + Math.max(0,Math.min(4,+rawSlots.value||0)); }
+async function compute(){
+ if(!SAVE){status.innerHTML='<div class="warn">먼저 세이브 JSON을 불러오세요.</div>';return}
+ const r=roleObj();if(!r){status.innerHTML='<div class="warn">캐릭터를 선택하세요.</div>';return}
+ const t0=performance.now(),wanted=+rawCount.value;
+ status.innerHTML='<div class="warn">원시 자맥 계산 시작...</div>';
+ calcProgress.style.width="2%";
+ await new Promise(res=>setTimeout(res,0));
+ try{
+   const rawSlotN=+rawSlots.value||0;
+   if(rawSlotN<=0){
+     status.innerHTML='<div class="warn">현재 원시 계산 개방 칸이 0칸입니다. 원시 자맥 탭에서 ‘칸 +1 개방’으로 1~4칸을 직접 개방한 뒤 계산하세요.</div>';
+     calcProgress.style.width="0%";
+     return;
+   }
+   const st=stateFromSave(SAVE,r,+vipSel.value,rawCalcZizhi());
+   roleInfo.textContent=`${r.Name} / ID ${r.ID} / 세이브 ${saveRoleSlots()}칸 → 원시 계산 ${rawSlotN}칸 / TalLucky ${st.tal_lucky} / S ${st.seed} / RC ${st.born_talent_rc??"-"} / 근골 ${st.role_stats.con}`;
+   RAW=await scanPurplesAsync(st,10000,wanted,(w,p)=>{
+     const pct=Math.min(88,5+p/Math.max(1,wanted)*82);
+     calcProgress.style.width=pct+"%";
+     status.innerHTML=`<div class="warn">계산 중 · 세수 ${w.toLocaleString()}회 · 자맥 ${p}/${wanted}</div>`;
+   });
+   calcProgress.style.width="92%";
+   status.innerHTML='<div class="warn">충돌맥 분석 중...</div>';
+   await new Promise(res=>setTimeout(res,0));
+   CANDS=findExchangeCandidates(st,RAW); // 재스캔 금지
+   renderRaw();renderCandidates(LAST_CAND_KEY);
+   calcProgress.style.width="100%";
+   if(!status.innerHTML.includes("FAIL"))status.innerHTML=`<div class="good">계산 완료 · 자맥 ${RAW.length}개 · ${((performance.now()-t0)/1000).toFixed(2)}초</div>`;
+ }catch(e){
+   calcProgress.style.width="0%";
+   status.innerHTML=`<div class="bad">계산 오류: ${e.message}</div>`;
+ }
+}
+function renderRaw(){
+ let h="",prevWash=0;
+ const baseCost=stSlotsCostBase();
+ for(let i=0;i<RAW.length;i++){
+   const x=RAW[i],prev=i?RAW[i-1].wash_times:0,seg=(x.wash_times-prev)*baseCost;
+   const conf=x.earlier_conflict_name
+     ? `<b>${x.earlier_conflict_name}</b>`
+     : "없음";
+   h+=`<tr><td class="num">${x.wash_no}</td><td class="num">${seg}단</td><td class="q4">${x.talent_name}</td><td>${x.was_pity?"★":"-"}</td>
+   <td>${conf}</td><td>${x.earlier_conflict_wash_no??"-"}</td>
+   <td>${x.can_exchange&&!x.was_pity&&!x.hasPriorPity?"가능":"불가"}${x.block_reason?`<br><span class="small">${x.block_reason}</span>`:""}</td></tr>`;
+ }
+ rawBody.innerHTML=h;
+ simRenderRawTable();
+}
+function stSlotsCostBase(){const z=rawCalcZizhi(),n=+QUAL[String(z)]?.slots;return COST[n]?.[0]??0}
+function candidateKey(c){
+ return [+(c.wash_no||0),+(c.talent_id||0),+(c.conflictId||0),+(c.conflictWashNo||0),+(c.conflictWashTimes||0)].join("|");
+}
+function renderCandidates(preferredKey=""){
+ const rows=CANDS.filter(c=>c.canInitialize);
+ const keep=String(preferredKey||LAST_CAND_KEY||candidateSel.value||"");
+ candidateSel.innerHTML=rows.map(c=>`<option value="${candidateKey(c)}">원시 #${c.wash_no} · ${c.talent_name} · 가장 가까운 충돌 ${c.conflictName||"-"} (#${c.conflictWashNo||"-"})</option>`).join("");
+ if(rows.length){
+   const keys=new Set(rows.map(candidateKey));
+   const use=keys.has(keep)?keep:candidateKey(rows[0]);
+   candidateSel.value=use;
+   LAST_CAND_KEY=use;
+ }
+ nMsg.textContent=rows.length?`원시 계산에서 연 ${+rawSlots.value||0}칸을 그대로 사용합니다. 충돌맥+자맥 2칸을 잠근 뒤 남은 ${Math.max(0,(+rawSlots.value||0)-2)}칸을 N회 세수하고 치환열을 계산합니다.`:"무한교체 시작 후보 없음";
+}
+function resolveCandidateForN(){
+ const rows=CANDS.filter(c=>c.canInitialize);
+ if(!rows.length)return null;
+ let key=String(candidateSel.value||LAST_CAND_KEY||"");
+ let c=rows.find(x=>candidateKey(x)===key);
+ if(!c && LAST_CAND_KEY)c=rows.find(x=>candidateKey(x)===LAST_CAND_KEY);
+ if(!c)c=rows[0];
+ const use=candidateKey(c);
+ if(!candidateSel.options.length || !Array.from(candidateSel.options).some(o=>String(o.value)===use))renderCandidates(use);
+ candidateSel.value=use;
+ LAST_CAND_KEY=use;
+ return c;
+}
+let LAST_N_ROWS=null;
+function calcN(){
+ if(!SAVE){nMsg.innerHTML='<span class="warn">먼저 세이브를 불러오세요.</span>';return}
+ const c=resolveCandidateForN();
+ if(!c){
+   nMsg.innerHTML='<span class="warn">무한교체 시작 가능한 원시맥 후보가 없습니다.</span>';
+   nBody.innerHTML="";
+   return;
+ }
+ try{
+   // 원시맥 계산에서 저장된 후보를 자동 복원한다. UI 선택이 어긋나도 같은 CANDS 후보로 자동 재연결.
+   const opt=candidateSel.options[candidateSel.selectedIndex];
+   if(!opt || String(opt.value)!==candidateKey(c)){renderCandidates(candidateKey(c));candidateSel.value=candidateKey(c);}
+
+   const st=stateFromSave(SAVE,roleObj(),+vipSel.value,rawCalcZizhi()),rows=exchangeNRows(st,c,+nMax.value,15);
+   LAST_N_ROWS=rows
+   nBody.innerHTML=rows.map(r=>`<tr><td>${r.n}</td><td>${r.pills}단</td><td>${r.luck}</td>${r.draws.map(d=>`<td class="q4">${d.name}</td>`).join("")}</tr>`).join("");
+
+   const r12=rows.find(r=>r.n===12);
+   const pass=(c.talent_name==="도법 절륜" && c.conflictName==="도법 고수" &&
+               r12 && r12.luck===1389334149 &&
+               r12.draws[0]?.name==="귀연정천" &&
+               r12.draws[1]?.name==="혼원기맥" &&
+               r12.draws[2]?.name==="표홀약신");
+
+   const cutoff=rows.nextPurpleN;
+   nMsg.innerHTML=`선택 원시 #${c.wash_no} · <b>${c.talent_name}</b> /
+   가장 가까운 충돌맥 <b>${c.conflictName}</b> (원시 #${c.conflictWashNo}) /
+   기준: ${rows.openSlots}칸 중 2칸 잠금 + 자유 ${rows.freeSlots}칸
+   ${cutoff!=null?` / <b>다음 자맥 ${nm(rows.nextPurpleId)}이 N=${cutoff}에서 등장 → 무한교체 유효 N은 0~${cutoff-1}</b>`:""}
+   ${r12?` / N=12 seed <b>${r12.luck}</b> / ${r12.draws.slice(0,3).map(x=>x.name).join(" → ")}`:""}
+   ${pass?'<span class="good"> · 상호건 N=12 회귀 PASS</span>':''}`;
+ }catch(e){nMsg.innerHTML=`<span class="bad">${e.message}</span>`;nBody.innerHTML=""}
+}
+async function loadSelectedSave(){
+ const f=saveFile.files&&saveFile.files[0];
+ if(!f){
+   status.innerHTML='<div class="warn">먼저 세이브 JSON 파일을 선택하세요.</div>';
+   return;
+ }
+ loadFileBtn.disabled=true;
+ status.innerHTML=`<div class="warn">${f.name} 불러오는 중...</div>`;
+ calcProgress.style.width="15%";
+ try{
+   const txt=await f.text();
+   calcProgress.style.width="45%";
+   const parsed=JSON.parse(txt);
+   if(!parsed||typeof parsed!=="object")throw new Error("JSON 최상위 구조가 올바르지 않습니다.");
+
+   SAVE=parsed;
+   ENGINE_CACHE.clear();
+   RAW=[];CANDS=[];LAST_CAND_KEY="";
+   LAST_N_ROWS=null;
+   SIM=null;SIM_BASE=null;SIM_LOG=[];SIM_ROLE_NAME="";
+
+   rawBody.innerHTML="";
+   rawFullBody.innerHTML="";
+   rawFullSummary.innerHTML="";
+   nBody.innerHTML="";
+   candidateSel.innerHTML="";
+   
+   simRefresh();
+
+   populateRoles();
+   syncRawSlots(true);
+   renderSpecialChecks();
+
+   calcProgress.style.width="100%";
+   const roleCount=roleSel.options.length;
+   roleInfo.textContent=`${f.name} · 캐릭터 ${roleCount}명 불러옴`;
+   status.innerHTML='<div class="good">세이브 JSON을 정상적으로 불러왔습니다. 캐릭터를 선택한 뒤 원시 자맥 탭에서 원시맥 계산을 누르세요.</div>';
+   setTimeout(()=>{calcProgress.style.width="0%"},500);
+ }catch(e){
+   SAVE=null;
+   populateRoles();renderSpecialChecks();
+   calcProgress.style.width="0%";
+   status.innerHTML=`<div class="bad">세이브 불러오기 실패: ${String(e&&e.message||e)}</div>`;
+ }finally{
+   loadFileBtn.disabled=false;
+ }
+}
+
+function setupTabs(){
+ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+   document.querySelectorAll(".tabs button").forEach(x=>x.classList.remove("active"));
+   document.querySelectorAll(".pane").forEach(x=>x.classList.remove("active"));
+   b.classList.add("active");
+   document.getElementById(b.dataset.pane).classList.add("active");
+
+   // 탭 전환은 상태를 바꾸지 않는다.
+   // 모의 세수작으로 돌아오면 메모리에 남아 있는 SIM 상태만 다시 렌더링.
+   if(b.dataset.pane==="simPane")simRefresh();
+   if(b.dataset.pane==="nPane" && CANDS.length)renderCandidates(LAST_CAND_KEY);
+ });
+};
+loadFileBtn.onclick=loadSelectedSave;
+saveFile.onchange=()=>{
+ const f=saveFile.files&&saveFile.files[0];
+ status.innerHTML=f?`<div class="warn">선택됨: ${f.name} · ‘선택한 파일 불러오기’를 누르세요.</div>`:'<div class="warn">세이브가 아직 선택되지 않았습니다.</div>';
+};
+calcBtn.onclick=compute;
+roleSel.onchange=()=>{
+ roleInfo.textContent="캐릭터 선택됨 · 원시 자맥 탭에서 원시맥 계산 버튼을 누르세요.";
+ rawSlots.dataset.userSet="0"; syncRawSlots(true);
+ renderSpecialChecks();
+ if(SIM)status.innerHTML='<div class="warn">모의 세수작은 기존 캐릭터 상태를 유지 중입니다. 새 캐릭터로 바꾸려면 모의 세수작 탭에서 ‘현재 세이브 상태로 시작’을 다시 누르세요.</div>';
+};
+vipSel.onchange=()=>{
+ renderSpecialChecks();
+ if(SIM)status.innerHTML='<div class="warn">모의 세수작은 시작 당시 조건을 유지 중입니다. 변경된 조건으로 다시 시작하려면 모의 세수작 탭에서 시작 버튼을 다시 누르세요.</div>';
+};
+rawCount.onchange=()=>{};
+rawSlots.onchange=()=>{
+ rawSlots.dataset.userSet="1"; syncRawSlots(false);
+ simCancelRunning();DAO_V288_CACHE=null;DAO_V296_EXCHANGE_CACHE=null;RAW=[];CANDS=[];LAST_CAND_KEY="";LAST_N_ROWS=null;rawBody.innerHTML="";candidateSel.innerHTML="";SIM=null;SIM_BASE=null;SIM_HISTORY=[];simRefresh();
+ status.innerHTML='<div class="warn">계산용 열린 칸이 변경되었습니다. 원시맥을 다시 계산하면 N표·치환맥·모의 세수작에도 같은 칸 수가 적용됩니다.</div>';
+};
+rawSlotPlus.onclick=()=>{
+ const n=Math.min(4,(+rawSlots.value||0)+1);
+ rawSlots.value=String(n); rawSlots.dataset.userSet="1"; syncRawSlots(false);
+ simCancelRunning();DAO_V288_CACHE=null;DAO_V296_EXCHANGE_CACHE=null;RAW=[];CANDS=[];LAST_CAND_KEY="";LAST_N_ROWS=null;rawBody.innerHTML="";candidateSel.innerHTML="";SIM=null;SIM_BASE=null;SIM_HISTORY=[];simRefresh();
+ status.innerHTML=`<div class="good">계산용으로 ${n}칸 개방했습니다. 원시맥·N표·치환맥·모의 세수작에 동일 적용됩니다.</div>`;
+};
+rawSlotReset.onclick=()=>{
+ rawSlots.dataset.userSet="0"; syncRawSlots(true);
+ simCancelRunning();DAO_V288_CACHE=null;DAO_V296_EXCHANGE_CACHE=null;RAW=[];CANDS=[];LAST_CAND_KEY="";LAST_N_ROWS=null;rawBody.innerHTML="";candidateSel.innerHTML="";SIM=null;SIM_BASE=null;SIM_HISTORY=[];simRefresh();
+ status.innerHTML='<div class="warn">계산용 칸을 현재 세이브 칸 수로 복원했습니다.</div>';
+};
+const simPillStock=document.getElementById("simPillStock");
+if(simPillStock)simPillStock.oninput=()=>{if(SIM)simRefresh();else simRenderRawTable();};
+
+simStartBtn.onclick=simStart;
+const simExportPracticalBtnEl=document.getElementById("simExportPracticalBtn");
+if(simExportPracticalBtnEl)simExportPracticalBtnEl.onclick=simExportPracticalLog;
+simBackBtn.onclick=simBack;
+simResetBtn.onclick=simReset;
+simExpandBtn.onclick=simExpand;
+simUnlockAllBtn.onclick=simUnlockAll;
+simWash1.onclick=()=>simWashTimes(1,"세수 1번");
+simWash5.onclick=()=>simWashTimes(5,"세수 5번");
+simWash10.onclick=()=>simWashTimes(10,"세수 10번");
+simWashPurple.onclick=simWashToPurple;
+simWashPair.onclick=simWashToPair;
+simWashDualAnchor.onclick=simWashToDualAnchorBeforePurple;
+simWashNextExchangeAnchor.onclick=simWashToNextExchangeAnchor;
+simFindTalentBtn.onclick=()=>simFindTalent(false);
+simFindAndLockBtn.onclick=()=>simFindTalent(true);
+simWashCustom.onclick=()=>simWashTimes(+simWashCustomN.value,"지정 세수");
+simExchangeBtn.onclick=simExchange;
+simPreviewExchangeBtn.onclick=simPreviewExchange;
+document.querySelectorAll(".n-subtabs button").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll(".n-subtabs button").forEach(x=>x.classList.remove("active"));
+ document.querySelectorAll(".n-subpane").forEach(x=>x.classList.remove("active"));
+ b.classList.add("active");document.getElementById(b.dataset.nsub).classList.add("active");
+});
 nCalc.onclick=calcN;(()=>{
  const b1=document.getElementById('daoRawBeforeBtn');
  const b2=document.getElementById('daoExchangeWindowBtn');
