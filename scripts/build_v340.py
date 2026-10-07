@@ -5,8 +5,8 @@ DST=Path('Nangman_Integrated_Simulator_v3_40.html')
 if not SRC.exists(): raise SystemExit('v3.37 source missing')
 text=SRC.read_text(encoding='utf-8')
 text=text.replace('v3.37','v3.40').replace('v3_37','v3_40')
-text=re.sub(r'(?<![0-9])3\\.37(?![0-9])','3.39',text)
-text=re.sub(r'<script id="stable-root-url-v338">.*?</script>\\s*','',text,flags=re.S)
+text=re.sub(r'(?<![0-9])3\\.37(?![0-9])','3.40',text)
+text=re.sub(r'<script id="stable-root-url-v337">.*?</script>\\s*','',text,flags=re.S)
 he=text.lower().find('</head>')
 if he<0: raise SystemExit('head end missing')
 text=text[:he]+'''<script id="stable-root-url-v340">try{if(/Nangman_Integrated_Simulator_v3_40\\\\.html/i.test(location.pathname)){history.replaceState(null,'','/NangmanSimulator/');}}catch(e){}</script>\\n'''+text[he:]
@@ -121,3 +121,6 @@ for i,js0 in enumerate(parent_scripts):
     if cp.returncode: raise SystemExit(cp.stderr[:3000])
     checked+=1
 print(f'built v3.40 equipment auto simulation; parent JS checked={checked}, iframe JS checked={len(iframe_scripts)}')
+
+# v3.40 guard: validation regex must use a real word-boundary and no literal backslash-n may remain before the mount hook.
+if "\\\\nwindow.rk218Open=open" in h: raise SystemExit('literal backslash-n before mount hook')
