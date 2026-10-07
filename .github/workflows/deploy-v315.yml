@@ -1,24 +1,24 @@
-name: Deploy v3.41
+name: Deploy v3.42
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  build-v341:
+  build-v342:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build and validate v3.41
-        run: python scripts/build_v341.py
-      - name: Commit v3.41
+      - name: Build and validate v3.42
+        run: python scripts/build_v342.py
+      - name: Commit v3.42
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_v341.py Nangman_Integrated_Simulator_v3_41.html latest.json README.md
-          git commit -m "Add equipment auto simulation in v3.41" || exit 0
+          git add scripts/build_v342.py Nangman_Integrated_Simulator_v3_42.html latest.json README.md
+          git commit -m "Add equipment auto simulation in v3.42" || exit 0
           git pull --rebase origin main
           git push
