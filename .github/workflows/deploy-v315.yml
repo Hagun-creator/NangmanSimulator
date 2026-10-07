@@ -1,24 +1,26 @@
-name: Deploy v3.44
+name: Deploy v3.45
 on:
   push:
     branches: [main]
 permissions:
-  contents: write
+  contents: read
 jobs:
-  build-v344:
+  verify-v345:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Build and validate v3.44
-        run: python scripts/build_v344.py
-      - name: Commit v3.44
+      - name: Verify v3.45
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/build_v344.py Nangman_Integrated_Simulator_v3_44.html latest.json README.md
-          git commit -m "Add equipment auto simulation in v3.44" || exit 0
-          git pull --rebase origin main
-          git push
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('Nangman_Integrated_Simulator_v3_45.html')
+          assert p.exists(), 'v3.45 html missing'
+          s=p.read_text(encoding='utf-8')
+          assert '<title>낭만강호 시뮬레이터 v3.45</title>' in s
+          j=json.loads(Path('latest.json').read_text(encoding='utf-8'))
+          assert j['version']=='v3.45'
+          assert j['file']=='Nangman_Integrated_Simulator_v3_45.html'
+          print('v3.45 verified')
+          PY
