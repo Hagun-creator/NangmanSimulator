@@ -1,38 +1,38 @@
-name: Deploy v3.46
+name: Deploy v3.47
 on:
   push:
     branches: [main]
 permissions:
   contents: read
 jobs:
-  verify-v346:
+  verify-v347:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify v3.46
+      - name: Verify v3.47
         run: |
           python - <<'PY'
           from pathlib import Path
           import json,re,base64,subprocess,tempfile
-          p=Path('Nangman_Integrated_Simulator_v3_46.html')
-          assert p.exists(), 'v3.46 html missing'
+          p=Path('Nangman_Integrated_Simulator_v3_47.html')
+          assert p.exists(), 'v3.47 html missing'
           s=p.read_text(encoding='utf-8')
-          assert '<title>낭만강호 시뮬레이터 v3.46</title>' in s
+          assert '<title>낭만강호 시뮬레이터 v3.47</title>' in s
           assert '\\n<script id="stable-root-url' not in s[:50000]
           assert '· 드랍 ·' not in s[:50000]
-          for tok in ['auto-equip-v345','auto345-region-picks','renderResultFilter339','Number(z.color)!==4','auto345-optionrow','정련 옵션','mjEval._rkAscendedFrom','mjBase._rkAscendedFrom','autoCostSummary346','auto346-region-summary','90급 제작 기반','rkAscendForRefine218(virtualFromMake(o.make,o.rt.p.selectId))']:
+          for tok in ['auto-equip-v345','auto345-region-picks','renderResultFilter339','Number(z.color)!==4','auto345-optionrow','정련 옵션','mjEval._rkAscendedFrom','mjBase._rkAscendedFrom','autoCostSummary346','auto346-region-summary','90급 제작 기반','rkAscendForRefine218(virtualFromMake(o.make,o.rt.p.selectId))','auto347-globalnote','실제 적용되는 내부값','Math.round(v * 1000000) / 10000']:
               assert tok in base64.b64decode(re.search(r'const EQUIPMENT_HTML_B64="([A-Za-z0-9+/=]+)";',s).group(1)).decode('utf-8'), tok
           h=base64.b64decode(re.search(r'const EQUIPMENT_HTML_B64="([A-Za-z0-9+/=]+)";',s).group(1)).decode('utf-8')
           scripts=re.findall(r'<script\b[^>]*>(.*?)</script>',h,re.I|re.S)
           assert scripts
           for i,js in enumerate(scripts):
               if not js.strip(): continue
-              q=Path(tempfile.gettempdir())/f'v346_iframe_{i}.js'; q.write_text(js,encoding='utf-8')
+              q=Path(tempfile.gettempdir())/f'v347_iframe_{i}.js'; q.write_text(js,encoding='utf-8')
               cp=subprocess.run(['node','--check',str(q)],capture_output=True,text=True)
               assert cp.returncode==0, cp.stderr
           j=json.loads(Path('latest.json').read_text(encoding='utf-8'))
-          assert j['version']=='v3.46'
-          assert j['file']=='Nangman_Integrated_Simulator_v3_46.html'
-          print('v3.46 verified')
+          assert j['version']=='v3.47'
+          assert j['file']=='Nangman_Integrated_Simulator_v3_47.html'
+          print('v3.47 verified')
           PY
