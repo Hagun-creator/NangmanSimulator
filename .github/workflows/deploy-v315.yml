@@ -14,11 +14,23 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import json
+          import json,re,base64,subprocess,tempfile
           p=Path('Nangman_Integrated_Simulator_v3_45.html')
           assert p.exists(), 'v3.45 html missing'
           s=p.read_text(encoding='utf-8')
           assert '<title>낭만강호 시뮬레이터 v3.45</title>' in s
+          assert '\\n<script id="stable-root-url' not in s[:50000]
+          assert '· 드랍 ·' not in s[:50000]
+          for tok in ['auto-equip-v345','auto345-region-picks','renderResultFilter339','Number(z.color)!==4','auto345-optionrow','정련 옵션','mjEval._rkAscendedFrom','mjBase._rkAscendedFrom']:
+              assert tok in base64.b64decode(re.search(r'const EQUIPMENT_HTML_B64="([A-Za-z0-9+/=]+)";',s).group(1)).decode('utf-8'), tok
+          h=base64.b64decode(re.search(r'const EQUIPMENT_HTML_B64="([A-Za-z0-9+/=]+)";',s).group(1)).decode('utf-8')
+          scripts=re.findall(r'<script\b[^>]*>(.*?)</script>',h,re.I|re.S)
+          assert scripts
+          for i,js in enumerate(scripts):
+              if not js.strip(): continue
+              q=Path(tempfile.gettempdir())/f'v345_iframe_{i}.js'; q.write_text(js,encoding='utf-8')
+              cp=subprocess.run(['node','--check',str(q)],capture_output=True,text=True)
+              assert cp.returncode==0, cp.stderr
           j=json.loads(Path('latest.json').read_text(encoding='utf-8'))
           assert j['version']=='v3.45'
           assert j['file']=='Nangman_Integrated_Simulator_v3_45.html'
