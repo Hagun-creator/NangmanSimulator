@@ -21,7 +21,7 @@ jobs:
           assert '<title>낭만강호 시뮬레이터 v3.46</title>' in s
           assert '\\n<script id="stable-root-url' not in s[:50000]
           assert '· 드랍 ·' not in s[:50000]
-          for tok in ['auto-equip-v346','auto345-region-picks','renderResultFilter339','Number(z.color)!==4','auto345-optionrow','정련 옵션','mjEval._rkAscendedFrom','mjBase._rkAscendedFrom']:
+          for tok in ['auto-equip-v345','auto345-region-picks','renderResultFilter339','Number(z.color)!==4','auto345-optionrow','정련 옵션','mjEval._rkAscendedFrom','mjBase._rkAscendedFrom','autoCostSummary346','auto346-region-summary','90급 제작 기반','rkAscendForRefine218(virtualFromMake(o.make,o.rt.p.selectId))']:
               assert tok in base64.b64decode(re.search(r'const EQUIPMENT_HTML_B64="([A-Za-z0-9+/=]+)";',s).group(1)).decode('utf-8'), tok
           h=base64.b64decode(re.search(r'const EQUIPMENT_HTML_B64="([A-Za-z0-9+/=]+)";',s).group(1)).decode('utf-8')
           scripts=re.findall(r'<script\b[^>]*>(.*?)</script>',h,re.I|re.S)
