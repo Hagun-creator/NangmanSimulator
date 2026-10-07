@@ -1,11 +1,11 @@
 from pathlib import Path
 import re,base64,subprocess,json
-SRC=Path('Nangman_Integrated_Simulator_v3_38.html')
+SRC=Path('Nangman_Integrated_Simulator_v3_37.html')
 DST=Path('Nangman_Integrated_Simulator_v3_39.html')
-if not SRC.exists(): raise SystemExit('v3.38 source missing')
+if not SRC.exists(): raise SystemExit('v3.37 source missing')
 text=SRC.read_text(encoding='utf-8')
-text=text.replace('v3.38','v3.39').replace('v3_38','v3_39')
-text=re.sub(r'(?<![0-9])3\\.38(?![0-9])','3.39',text)
+text=text.replace('v3.37','v3.39').replace('v3_37','v3_39')
+text=re.sub(r'(?<![0-9])3\\.37(?![0-9])','3.39',text)
 text=re.sub(r'<script id="stable-root-url-v338">.*?</script>\\s*','',text,flags=re.S)
 he=text.lower().find('</head>')
 if he<0: raise SystemExit('head end missing')
